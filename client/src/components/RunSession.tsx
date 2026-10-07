@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { useQuery } from "../hooks/useApi";
+import { useMutation, useQuery } from "../hooks/useApi";
 import type { ReviewRunDto, RunSessionDto } from "../../../shared/types";
 import StatusBadge from "./StatusBadge";
 import Button from "./ui/Button";
@@ -8,6 +8,7 @@ import { Select } from "./ui/Field";
 import Icon from "./ui/Icon";
 import { CardSkeleton } from "./ui/Skeleton";
 import NotFound from "./ui/NotFound";
+import { useToast } from "./ui/Toast";
 import { ShellActions } from "./AppShell";
 import { formatCount, relativeTime } from "../lib/format";
 import { useHotkeys } from "../hooks/useHotkeys";
@@ -294,6 +295,38 @@ export function SessionButton({ repo, number, status, onOpen }: { repo: string; 
       <Icon name="cpu" />
       Session
       {runs.length > 1 && <Chip mono>{runs.length}</Chip>}
+    </Button>
+  );
+}
+
+/**
+ * A review that failed on an unreadable report can be read again from the saved answer of its
+ * latest run, with the current parser — no new Claude call, no cost.
+ */
+export function ReimportButton({ repo, number, error, onDone }: { repo: string; number: number; error: string | null; onDone: () => void }) {
+  const { data: runs } = useQuery<ReviewRunDto[]>(`/api/reviews/${repo}/${number}/runs`, [repo, number, error]);
+  const reimport = useMutation<{ findings: number }>("__reimport__", "POST");
+  const { toast } = useToast();
+  const latest = runs?.[0];
+  if (!latest || !error || !/invalid JSON|no JSON report/.test(error)) return null;
+  return (
+    <Button
+      size="sm"
+      variant="acid"
+      disabled={reimport.loading}
+      title="Reads the agent's saved answer again with the current parser. No new run, no cost."
+      onClick={async () => {
+        try {
+          const res = await reimport.mutate({}, `/api/runs/${latest.id}/reimport`);
+          toast({ kind: "success", message: `Report read again: ${res.findings} finding${res.findings === 1 ? "" : "s"}` });
+          onDone();
+        } catch (err) {
+          toast({ kind: "error", message: `Still unreadable: ${(err as Error).message}` });
+        }
+      }}
+    >
+      <Icon name="refresh" />
+      Read the report again
     </Button>
   );
 }

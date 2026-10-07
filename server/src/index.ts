@@ -7,6 +7,7 @@ import { prsRouter } from "./routes/prs";
 import { reviewsRouter } from "./routes/reviews";
 import { findingsRouter } from "./routes/findings";
 import { localRouter } from "./routes/local";
+import { compareRouter } from "./routes/compare";
 import { failInterruptedRuns } from "./services/run-log";
 
 const db = getDb();
@@ -29,6 +30,7 @@ app.use("/api", prsRouter);
 app.use("/api", reviewsRouter);
 app.use("/api", findingsRouter);
 app.use("/api", localRouter);
+app.use("/api", compareRouter);
 
 if (process.env.NODE_ENV === "production") {
   const distDir = path.join(process.cwd(), "dist");

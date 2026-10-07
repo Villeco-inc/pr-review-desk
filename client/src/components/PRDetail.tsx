@@ -38,7 +38,7 @@ import { focusedAttr, useHotkeys } from "../hooks/useHotkeys";
 import { LAUNCH_DEFAULTS, LAUNCH_KEY, useStoredState } from "../lib/storage";
 import { loadPrOrder } from "../lib/url-state";
 import NotFound from "./ui/NotFound";
-import { SessionButton } from "./RunSession";
+import { ReimportButton, SessionButton } from "./RunSession";
 
 interface ReviewWithFindings extends ReviewDto {
   findings: FindingDto[];
@@ -332,6 +332,7 @@ export default function PRDetail({
                 <pre className="max-w-[900px] whitespace-pre-wrap edge bg-surface px-2.5 py-2 font-mono text-xs leading-[18px] text-danger-ink">{review.error}</pre>
               </div>
               <div className="flex gap-2">
+                <ReimportButton repo={repo} number={number} error={review.error} onDone={refetchReview} />
                 <Button size="sm" onClick={() => navigator.clipboard?.writeText(review.error ?? "")}>
                   Copy error
                 </Button>

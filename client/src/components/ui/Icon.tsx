@@ -32,6 +32,7 @@ const PATHS = {
   ),
   pullRequest: <><circle cx="6" cy="5" r="2.25" /><circle cx="6" cy="19" r="2.25" /><circle cx="18" cy="19" r="2.25" /><path d="M6 7.25v9.5" /><path d="M18 16.75V9a3 3 0 0 0-3-3h-4" /><path d="m13 3.5-2.5 2.5L13 8.5" /></>,
   settings: <><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M2 12h3M19 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" /></>,
+  compare: <><path d="M4 7h14" /><path d="m15 4 3 3-3 3" /><path d="M20 17H6" /><path d="m9 14-3 3 3 3" /></>,
   search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>,
   mark: <><circle cx="11" cy="11" r="6" /><path d="m20 20-4.5-4.5" /><path d="m8.5 11 1.8 1.8L13.5 9.5" /></>,
 };

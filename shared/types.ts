@@ -210,3 +210,33 @@ export interface RunSessionDto {
   events: unknown[];
   stderr: string;
 }
+
+/** What a local review of a branch would read. */
+export interface LocalDiffSummaryDto {
+  baseRef: string;
+  ownCommits: number;
+  uncommittedFiles: number;
+  worktree: string | null;
+  files: number;
+}
+
+export interface ProductionRefDto {
+  tag: string;
+  source: "deployment" | "latest-tag";
+  deployedAt: string | null;
+}
+
+export interface RepoRefsDto {
+  defaultBranch: string;
+  branches: string[];
+  tags: string[];
+  production: ProductionRefDto | null;
+}
+
+export interface CompareSummaryDto {
+  truncated: boolean;
+  aheadBy: number;
+  behindBy: number;
+  commits: { sha: string; message: string; author: string }[];
+  files: { path: string; additions: number; deletions: number }[];
+}

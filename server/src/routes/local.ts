@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
-import { configuredLocalRepos, listLocalBranches, defaultBaseBranch, localRepoIdentity } from "../services/local-git";
+import { configuredLocalRepos, listLocalBranches, defaultBaseBranch, localRepoIdentity, getLocalDiff } from "../services/local-git";
 import { startLocalReview, reviewId } from "../services/review-engine";
 import { splitUnifiedDiff } from "../services/diff-utils";
 import { toFindingDto, toReviewDto } from "../services/dto";
@@ -33,6 +33,23 @@ localRouter.get("/local/branches", async (req, res) => {
   try {
     const [branches, base] = await Promise.all([listLocalBranches(repo.path), defaultBaseBranch(repo.path)]);
     res.json({ branches, defaultBase: base });
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/** What a review of this branch would read, so the screen can say it before a run is spent. */
+localRouter.get("/local/diff-summary", async (req, res) => {
+  const repo = configuredLocalRepos().find((r) => r.label === String(req.query.repo ?? ""));
+  const branch = String(req.query.branch ?? "");
+  const base = String(req.query.base ?? "");
+  if (!repo || !branch || !base) {
+    res.status(400).json({ error: "repo, branch and base are required" });
+    return;
+  }
+  try {
+    const { files, baseRef, ownCommits, worktree, uncommittedFiles } = await getLocalDiff(repo.path, branch, base);
+    res.json({ baseRef, ownCommits, uncommittedFiles, worktree, files: files.length });
   } catch (err) {
     res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }

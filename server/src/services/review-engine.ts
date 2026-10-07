@@ -1,20 +1,22 @@
 import { spawn, spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import { getDb } from "../db/schema";
 import {
   fetchPrDiff,
   fetchPrSnapshot,
   fetchExistingReviews,
+  fetchCompare,
+  fetchCompareDiff,
   type PrSnapshot,
   type ExistingReview,
   type ExistingReviewComment,
 } from "./github";
-import { parseReport } from "./findings-parser";
+import { closesString, parseReport } from "./findings-parser";
 import { splitUnifiedDiff } from "./diff-utils";
 import { getLocalDiff, getLatestCommitMessage, localRepoIdentity } from "./local-git";
-import { appendStderr, appendStreamLine, createRun, finishRun, recordStats, statsFromEvent } from "./run-log";
+import { appendStderr, appendStreamLine, createRun, finishRun, getRunSession, recordStats, statsFromEvent } from "./run-log";
 import type { Finding, Report, ReviewEvent } from "../../../shared/types";
 
 export const reviewEvents = new EventEmitter();
@@ -177,6 +179,7 @@ ${FINDINGS_SCHEMA_TEXT}
 \`suggestedComment\` est posté tel quel sur GitHub comme commentaire de review adressé à l'auteur de la PR — rédige-le en français, même style ELI5, court et concret.
 Chaque path doit être le chemin complet relatif à la racine du repo.
 Si tu ne trouves rien, output {"summary": "...", "findings": []}.
+Dans les valeurs texte du JSON, n'écris jamais de guillemet droit " : pour citer un mot ou une valeur, utilise « » ou des apostrophes '. Un " non échappé casse le JSON et fait échouer toute la review.
 
 Ne poste RIEN sur GitHub. Ne modifie AUCUN fichier.`;
 }
@@ -195,7 +198,7 @@ function extractJsonBlock(text: string): string | null {
     if (inString) {
       if (escape) escape = false;
       else if (ch === "\\") escape = true;
-      else if (ch === '"') inString = false;
+      else if (ch === '"' && closesString(text, i)) inString = false;
       continue;
     }
     if (ch === '"') {
@@ -464,7 +467,11 @@ async function runAgent(id: string, runId: string, prompt: string, model: string
   threadLogs.delete(id);
   const assistantText = await runClaude(id, runId, prompt, model, maxTurns);
   log(id, `claude finished, output: ${assistantText.length} chars`);
+  importReport(id, assistantText);
+}
 
+/** Turns the agent's final text into findings and marks the review reported. Throws when there is no usable report. */
+function importReport(id: string, assistantText: string): void {
   log(id, "extracting JSON block from output...");
   const jsonBlock = extractJsonBlock(assistantText);
   if (!jsonBlock) {
@@ -567,15 +574,25 @@ export async function startLocalReview(
 
   log(id, `=== STARTING LOCAL REVIEW === repo=${repoLabel} branch=${branch} base=${base}`);
 
-  const [{ diff, files }, { subject, body }] = await Promise.all([
+  const [{ diff, files, baseRef, ownCommits, worktree, uncommittedFiles }, { subject, body }] = await Promise.all([
     getLocalDiff(repoPath, branch, base),
     getLatestCommitMessage(repoPath, branch),
   ]);
-  log(id, `fetched: diff=${diff.length} chars, files=${files.length}`);
+  log(id, `fetched: diff=${diff.length} chars, files=${files.length}, vs ${baseRef}, ${ownCommits} own commits, ${uncommittedFiles} uncommitted files${worktree ? ` in ${worktree}` : ""}`);
+
+  // Nothing of the branch's own to read: stop before spending a run on it.
+  if (!diff.trim()) {
+    throw new Error(
+      `Nothing to review: ${branch} has no commits of its own beyond ${baseRef}` +
+        (worktree ? ` and no uncommitted changes in ${worktree}.` : `, and it is not checked out in a readable worktree, so uncommitted work cannot be seen.`)
+    );
+  }
+  // The last commit on a branch with no commits of its own belongs to the base, not to this work.
+  const title = ownCommits > 0 && subject ? subject : `${branch} (uncommitted work)`;
 
   const snapshot: PrSnapshot = {
-    title: subject || `${branch} vs ${base}`,
-    body,
+    title,
+    body: ownCommits > 0 ? body : "",
     author: { login: "" },
     state: "open",
     isDraft: false,
@@ -606,10 +623,119 @@ export async function startLocalReview(
 
   emit(id, "status", { status: "running" });
 
-  const subjectLine = `Review the local branch \`${branch}\` (diff vs \`${base}\`) in repo ${repoLabel} — ${snapshot.title}`;
+  const scope = [ownCommits > 0 && `${ownCommits} commit${ownCommits > 1 ? "s" : ""}`, uncommittedFiles > 0 && `${uncommittedFiles} uncommitted file${uncommittedFiles > 1 ? "s" : ""}`]
+    .filter(Boolean)
+    .join(" and ");
+  const subjectLine = `Review the local branch \`${branch}\` (${scope}, diff vs \`${baseRef}\`) in repo ${repoLabel} — ${snapshot.title}`;
   runReview(id, repo, number, subjectLine, snapshot, diff, { skills, model, effort, challengeExisting: false }).catch((err) => {
     failReview(id, err instanceof Error ? err.message : String(err));
   });
 
   return { repo, number };
+}
+
+/**
+ * A compare review has no PR number: it is keyed by repo and head, so "main of linea-geo-api"
+ * stays one review whose base (the tag in production) moves forward over time.
+ */
+export function compareIdentity(repo: string, head: string): { repo: string; number: number } {
+  const hash = createHash("sha1").update(`${repo}@${head}`).digest("hex").slice(0, 10);
+  return { repo: `compare/${repo.split("/")[1] ?? repo}-${hash}`, number: 0 };
+}
+
+export async function startCompareReview(
+  repo: string,
+  base: string,
+  head: string,
+  skills: string[] = [],
+  model?: string,
+  effort?: string
+): Promise<{ repo: string; number: number }> {
+  const db = getDb();
+  const identity = compareIdentity(repo, head);
+  const id = reviewId(identity.repo, identity.number);
+  const now = new Date().toISOString();
+
+  log(id, `=== STARTING COMPARE REVIEW === repo=${repo} ${base}...${head}`);
+  const compare = await fetchCompare(repo, base, head);
+  if (compare.truncated) {
+    throw new Error(
+      `Too large to review: ${head} is ${compare.aheadBy} commits ahead of ${base}, and GitHub truncates such a comparison, so the review would miss changes. Pick a closer base.`
+    );
+  }
+  const diff = await fetchCompareDiff(repo, base, head);
+  log(id, `fetched: ${compare.aheadBy} commits ahead, ${compare.files.length} files, diff=${diff.length} chars`);
+
+  if (!diff.trim()) throw new Error(`Nothing to review: ${head} has no changes beyond ${base} in ${repo}.`);
+
+  const commitList = compare.commits.map((c) => `- ${c.message.split("\n")[0]} (${c.sha.slice(0, 9)}${c.author ? `, ${c.author}` : ""})`).join("\n");
+  const snapshot: PrSnapshot = {
+    title: `${head} vs ${base}`,
+    body: `Commits in ${head} not in ${base}:\n${commitList}`,
+    author: { login: "" },
+    state: "open",
+    isDraft: false,
+    baseRefName: base,
+    headRefName: head,
+    headRefOid: compare.commits[compare.commits.length - 1]?.sha ?? "",
+    comments: [],
+    files: compare.files,
+  };
+
+  db.prepare(
+    `INSERT INTO reviews (id, repo, number, title, status, summary, error, diff, snapshot, skills, created_at, updated_at)
+     VALUES (@id, @repo, @number, @title, 'running', '', NULL, @diff, @snapshot, @skills, @created_at, @updated_at)
+     ON CONFLICT(id) DO UPDATE SET
+       status = 'running', summary = '', error = NULL, title = excluded.title, diff = excluded.diff, snapshot = excluded.snapshot,
+       skills = excluded.skills, updated_at = excluded.updated_at`
+  ).run({
+    id,
+    repo: identity.repo,
+    number: identity.number,
+    title: snapshot.title,
+    diff,
+    snapshot: JSON.stringify(snapshot),
+    skills: JSON.stringify(skills),
+    created_at: now,
+    updated_at: now,
+  });
+
+  emit(id, "status", { status: "running" });
+
+  const subjectLine = `Review the ${compare.aheadBy} commit${compare.aheadBy > 1 ? "s" : ""} on \`${head}\` of ${repo} that are not in \`${base}\` yet — ${snapshot.title}`;
+  runReview(id, identity.repo, identity.number, subjectLine, snapshot, diff, { skills, model, effort, challengeExisting: false }).catch((err) => {
+    failReview(id, err instanceof Error ? err.message : String(err));
+  });
+
+  return identity;
+}
+
+/**
+ * Reads a finished run's saved output again and imports its report — no new Claude call. For a run
+ * that failed on a malformed report, once the parser can read it.
+ */
+export function reimportRun(runId: string): { reviewId: string; findings: number } {
+  const session = getRunSession(runId);
+  if (!session) throw new Error("run not found");
+  const { reviewId: id } = session.run;
+  const latest = getDb().prepare("SELECT id FROM review_runs WHERE review_id = ? ORDER BY started_at DESC LIMIT 1").get(id) as { id: string } | undefined;
+  if (latest?.id !== runId) throw new Error("only the latest run of a review can be read again: an older one would replace newer findings");
+
+  const result = session.events.find((e): e is { type: "result"; result: string } => !!e && typeof e === "object" && (e as { type?: unknown }).type === "result");
+  const text =
+    typeof result?.result === "string"
+      ? result.result
+      : session.events
+          .filter((e) => !!e && typeof e === "object" && (e as { type?: unknown }).type === "assistant")
+          .flatMap((e) => ((e as { message?: { content?: { type: string; text?: string }[] } }).message?.content ?? []))
+          .filter((c) => c.type === "text" && typeof c.text === "string")
+          .map((c) => c.text as string)
+          .join("");
+  if (!text.trim()) throw new Error("this run has no saved answer to read");
+
+  importReport(id, text);
+  getDb().prepare("UPDATE reviews SET error = NULL WHERE id = ?").run(id);
+  finishRun(runId, "reported");
+  const count = (getDb().prepare("SELECT COUNT(*) AS n FROM findings WHERE review_id = ?").get(id) as { n: number }).n;
+  return { reviewId: id, findings: count };
 }

@@ -7,7 +7,8 @@ import { JUMP_KEY_LABEL, isMac } from "./CommandPalette";
 import { Segmented } from "./ui/Field";
 import { SETTINGS_SHOW_SYSTEM_SWITCH, useSystem, type System, type Theme } from "./SystemProvider";
 
-export type Section = "prs" | "local" | "repos" | "settings";
+export type Section = "prs" | "local" | "compare" | "repos" | "settings";
+export type BuiltSection = "prs" | "local" | "compare";
 
 interface ShellContextValue {
   actionsEl: HTMLElement | null;
@@ -69,13 +70,14 @@ interface AppShellProps {
   crumbs: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
-  onNavigate: (section: "prs" | "local") => void;
+  onNavigate: (section: BuiltSection) => void;
   onJump: () => void;
 }
 
 const SECTIONS: { id: Section; label: string; icon: IconName; built: boolean }[] = [
   { id: "prs", label: "Pull requests", icon: "pullRequest", built: true },
   { id: "local", label: "Local branches", icon: "branch", built: true },
+  { id: "compare", label: "Compare", icon: "compare", built: true },
   { id: "repos", label: "Repositories", icon: "repo", built: false },
   { id: "settings", label: "Settings", icon: "settings", built: false },
 ];
@@ -115,7 +117,7 @@ function Rail({
 }: {
   section: Section;
   counts: Partial<Record<Section, number>>;
-  onNavigate: (section: "prs" | "local") => void;
+  onNavigate: (section: BuiltSection) => void;
   onJump: () => void;
 }) {
   const { data: viewer } = useQuery<{ login: string }>("/api/viewer", [], 5 * 60_000);
@@ -157,7 +159,7 @@ function Rail({
                   aria-current={active ? "page" : undefined}
                   aria-disabled={s.built ? undefined : "true"}
                   title={s.built ? undefined : "Not built yet"}
-                  onClick={s.built ? () => onNavigate(s.id as "prs" | "local") : undefined}
+                  onClick={s.built ? () => onNavigate(s.id as BuiltSection) : undefined}
                   className={`flex h-10 w-full items-center gap-2.5 edge px-2.5 text-left label-caps focus-ring ${
                     active
                       ? "border-acid bg-acid text-acid-fg"

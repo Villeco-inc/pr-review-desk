@@ -6,7 +6,7 @@ import type { FindingRow, MyReviewState, PullRequest, PullRequestDto, ReviewRow 
 
 export const prsRouter = Router();
 
-function configuredRepos(): string[] {
+export function configuredRepos(): string[] {
   return (process.env.REPOS ?? "")
     .split(",")
     .map((r) => r.trim())

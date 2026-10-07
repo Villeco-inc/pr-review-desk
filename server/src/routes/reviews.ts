@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
-import { reviewEvents, reviewId, startReview, getThreadLog } from "../services/review-engine";
+import { reviewEvents, reviewId, startReview, getThreadLog, reimportRun } from "../services/review-engine";
 import { splitUnifiedDiff, findPatchForFile } from "../services/diff-utils";
 import { toFindingDto, toReviewDto } from "../services/dto";
 import { getRunSession, listRuns } from "../services/run-log";
@@ -151,6 +151,14 @@ reviewsRouter.get("/reviews/:owner/:name/:number/thread", (req, res) => {
 reviewsRouter.get("/reviews/:owner/:name/:number/runs", (req, res) => {
   const id = reviewId(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
   res.json(listRuns(id));
+});
+
+reviewsRouter.post("/runs/:runId/reimport", (req, res) => {
+  try {
+    res.json(reimportRun(req.params.runId));
+  } catch (err) {
+    res.status(422).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 reviewsRouter.get("/runs/:runId", (req, res) => {
