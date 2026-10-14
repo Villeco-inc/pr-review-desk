@@ -2,15 +2,22 @@ import { Router } from "express";
 import { getDb } from "../db/schema";
 import { listPullRequests, listOrgPullRequests, fetchPrSnapshot, getViewer } from "../services/github";
 import { reviewId } from "../services/review-engine";
+import { discoveredRepos } from "../services/repo-discovery";
+import { checkoutsRoot } from "../services/local-git";
 import type { FindingRow, MyReviewState, PullRequest, PullRequestDto, ReviewRow } from "../../../shared/types";
 
 export const prsRouter = Router();
 
+/** REPOS first, then the GitHub repo of every checkout found under SCAN_DIR. */
 export function configuredRepos(): string[] {
-  return (process.env.REPOS ?? "")
+  const explicit = (process.env.REPOS ?? "")
     .split(",")
     .map((r) => r.trim())
     .filter(Boolean);
+  const found = discoveredRepos(checkoutsRoot())
+    .map((r) => r.ghRepo)
+    .filter((r): r is string => !!r);
+  return [...new Set([...explicit, ...found])];
 }
 
 function reviewStatusFor(repo: string, number: number): ReviewRow | undefined {

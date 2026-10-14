@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useQuery } from "../hooks/useApi";
 import { useStoredState } from "../lib/storage";
 import NotFound from "./ui/NotFound";
-import { ReimportButton, SessionButton } from "./RunSession";
+import { ReimportButton, ScopeNote, SessionButton } from "./RunSession";
 import { useSSE } from "../hooks/useSSE";
 import type { FindingDto, ReviewDto } from "../../../shared/types";
 import SeverityBadge from "./SeverityBadge";
@@ -193,6 +193,7 @@ export default function LocalReviewDetail({
             <p className="max-w-[960px] whitespace-pre-wrap px-5 pb-4 pt-3 text-fg-2">{review.summary}</p>
           </div>
         )}
+        {review && <ScopeNote repo={repo} number={number} status={review.status} onOpen={onOpenSession} />}
       </Card>
 
       {/* The fix prompt is the whole point of the local track, so it gets its own band. */}

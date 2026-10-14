@@ -1,10 +1,28 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
+import { track } from "../db/telemetry";
 import { splitUnifiedDiff, findPatchForFile, diffHunkRanges, resolvePostAnchor } from "../services/diff-utils";
 import { getHeadSha, postFileComment, postInlineComment, postIssueComment } from "../services/github";
 import type { FindingRow, ReviewRow } from "../../../shared/types";
 
 export const findingsRouter = Router();
+
+// What you do with a finding (draft edited, posted, dismissed, reopened), recorded once it succeeded.
+findingsRouter.use((req, res, next) => {
+  const m = req.path.match(/^\/findings\/([^/]+)\/(comment|state|post|dismiss|reopen)$/);
+  if (!m || req.method === "GET") return next();
+  const start = Date.now();
+  res.on("finish", () => {
+    const finding = loadFinding(m[1]);
+    track("finding", m[2], {
+      reviewId: finding?.review_id ?? null,
+      status: res.statusCode < 400 ? "ok" : "error",
+      durationMs: Date.now() - start,
+      payload: { findingId: m[1], severity: finding?.severity ?? null, file: finding?.file ?? null, state: finding?.state ?? null, mode: (req.body as { mode?: string })?.mode ?? null, httpStatus: res.statusCode },
+    });
+  });
+  next();
+});
 
 function loadFinding(id: string): FindingRow | undefined {
   const db = getDb();

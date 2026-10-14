@@ -165,6 +165,11 @@ export interface ReviewRunRow {
   model: string | null;
   effort: string | null;
   max_turns: number | null;
+  effort_level: string | null;
+  diff_files: number | null;
+  sent_files: number | null;
+  omitted_files: string;
+  truncated_files: string;
   skills: string;
   prompt_chars: number;
   session_id: string | null;
@@ -187,6 +192,13 @@ export interface ReviewRunDto {
   model: string | null;
   effort: string | null;
   maxTurns: number | null;
+  /** claude --effort level; null on runs from before effort replaced the turn cap. */
+  effortLevel: string | null;
+  /** Files in the change, and how many of them the agent was sent; null on older runs. */
+  diffFiles: number | null;
+  sentFiles: number | null;
+  omittedFiles: { path: string; reason: string; chars: number }[];
+  truncatedFiles: { path: string; chars: number; keptChars: number }[];
   skills: string[];
   promptChars: number;
   sessionId: string | null;

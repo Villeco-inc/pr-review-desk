@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { discoveredRepos } from "./repo-discovery";
+import { timed } from "../db/telemetry";
 
 const execFileAsync = promisify(execFile);
 const EXEC_OPTS = { timeout: 30_000, maxBuffer: 32 * 1024 * 1024 };
@@ -14,9 +16,12 @@ export interface LocalRepo {
 // Docker mounts REPOS_ROOT at /repos and says so; in dev mode the checkouts are read in place.
 const localReposRoot = () => process.env.LOCAL_REPOS_ROOT || process.env.REPOS_ROOT || "/repos";
 
+export const checkoutsRoot = () => localReposRoot().replace(/\/+$/, "");
+
+/** LOCAL_REPOS first, then every checkout found under SCAN_DIR; a label listed explicitly wins. */
 export function configuredLocalRepos(): LocalRepo[] {
-  const root = localReposRoot().replace(/\/+$/, "");
-  return (process.env.LOCAL_REPOS ?? "")
+  const root = checkoutsRoot();
+  const explicit = (process.env.LOCAL_REPOS ?? "")
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean)
@@ -24,14 +29,21 @@ export function configuredLocalRepos(): LocalRepo[] {
       const [label, relPath] = entry.includes("=") ? entry.split("=") : [entry, entry];
       return { label, path: `${root}/${relPath}` };
     });
+  const known = new Set(explicit.map((r) => r.label));
+  const found = discoveredRepos(root)
+    .filter((r) => !known.has(r.label))
+    .map(({ label, path }) => ({ label, path }));
+  return [...explicit, ...found];
 }
 
 // Optional locks off: the checkouts are mounted read-only, so git must not try to refresh the index.
 const GIT_ENV = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
 
 async function git(repoPath: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", ["-C", repoPath, ...args], { ...EXEC_OPTS, env: GIT_ENV });
-  return stdout;
+  return timed("git", args[0] === "--git-dir" ? args[4] ?? "git" : args[0], { payload: { repo: repoPath, args: args.join(" ").slice(0, 500) } }, async () => {
+    const { stdout } = await execFileAsync("git", ["-C", repoPath, ...args], { ...EXEC_OPTS, env: GIT_ENV });
+    return stdout;
+  }, (out) => ({ bytes: out.length }));
 }
 
 /** `git diff --no-index` exits 1 when the files differ, which is the case we want. */

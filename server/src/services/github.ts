@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getDb } from "../db/schema";
+import { track } from "../db/telemetry";
 import type { PullRequest } from "../../../shared/types";
 
 const execFileAsync = promisify(execFile);
@@ -14,6 +15,9 @@ function ghLog(...args: unknown[]): void {
   console.log("[github]", ...args);
 }
 
+/** The command for the log, with long values (comment bodies) shortened. */
+const ghArgsForLog = (args: string[]) => args.map((a) => (a.length > 200 ? `${a.slice(0, 200)}…` : a)).join(" ");
+
 async function runGh(args: string[]): Promise<string> {
   const label = args.slice(0, 4).join(" ");
   ghLog(`exec: gh ${label}...`);
@@ -26,12 +30,18 @@ async function runGh(args: string[]): Promise<string> {
       const { stdout } = await execFileAsync(candidate, args, EXEC_OPTS);
       resolvedGhPath = candidate;
       ghLog(`gh ${label} done (${Date.now() - start}ms, ${stdout.length} bytes)`);
+      track("gh", label, { status: "ok", durationMs: Date.now() - start, payload: { args: ghArgsForLog(args), bytes: stdout.length } });
       return stdout;
     } catch (err) {
       lastError = err;
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") {
         ghLog(`gh ${label} FAILED: ${(err as Error).message}`);
+        track("gh", label, {
+          status: "error",
+          durationMs: Date.now() - start,
+          payload: { args: ghArgsForLog(args), code: code ?? null, error: (err as Error).message.slice(0, 2000) },
+        });
         throw err;
       }
       ghLog(`${candidate}: not found`);

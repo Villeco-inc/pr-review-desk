@@ -11,6 +11,7 @@ import LocalBranches from "./components/LocalBranches";
 import LocalReviewDetail from "./components/LocalReviewDetail";
 import RunSession from "./components/RunSession";
 import CompareView from "./components/CompareView";
+import ActivityView, { type ActivitySearch } from "./components/ActivityView";
 import { useQuery } from "./hooks/useApi";
 import NotFound from "./components/ui/NotFound";
 import { useGo } from "./nav";
@@ -406,6 +407,26 @@ function CompareSessionPage() {
   );
 }
 
+const activityRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/activity",
+  validateSearch: (raw: Record<string, unknown>): ActivitySearch => {
+    const days = Number(raw.days);
+    return {
+      days: Number.isFinite(days) && days > 0 ? days : undefined,
+      kind: typeof raw.kind === "string" && raw.kind ? raw.kind : undefined,
+      q: typeof raw.q === "string" && raw.q ? raw.q : undefined,
+    };
+  },
+  component: ActivityPage,
+});
+
+function ActivityPage() {
+  const search = activityRoute.useSearch();
+  const go = useGo();
+  return <ActivityView search={search} onSearchChange={(next) => go.activity(next, { replace: true })} />;
+}
+
 function UnknownPath() {
   const go = useGo();
   return <NotFound title="Page not found" detail={window.location.pathname} backLabel="Back to pull requests" onBack={go.prList} />;
@@ -427,6 +448,7 @@ const routeTree = rootRoute.addChildren([
   compareReviewRoute,
   compareFindingRoute,
   compareSessionRoute,
+  activityRoute,
 ]);
 
 export const router = createRouter({

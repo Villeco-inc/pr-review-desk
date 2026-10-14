@@ -24,7 +24,7 @@ Fill in `.env`:
 
 | Variable | How to get it |
 | --- | --- |
-| `REPOS` | The repositories to list, `owner/name,owner/name` |
+| `REPOS_ROOT` + `SCAN_DIR` | The folder holding your checkouts: every repo cloned there is picked up, see [Which repositories](#which-repositories) |
 | `GH_TOKEN` | `gh auth token` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `claude setup-token` (a long-lived token, made for headless use) |
 
@@ -38,14 +38,20 @@ Open **http://localhost:37703**.
 
 If a required value is missing, `docker compose up` stops and names it, instead of starting an app that cannot work.
 
-## Reviewing local branches (optional)
+## Which repositories
 
-To review a branch that has no PR yet, point the app at the folder holding your checkouts. Docker mounts it read-only at `/repos`.
+Point the app at the folder where your checkouts live. Docker mounts it read-only at `/repos`.
 
 ```bash
-REPOS_ROOT=/Users/me/code                    # absolute path, defaults to ~/Documents
-LOCAL_REPOS=api=my-org/api,web=my-org/web    # label=path relative to REPOS_ROOT
+REPOS_ROOT=/Users/me/code    # absolute path, defaults to ~/Documents
+SCAN_DIR=my-org              # relative to REPOS_ROOT: /Users/me/code/my-org/<each repo>
 ```
+
+Every subfolder of `SCAN_DIR` with a `.git` becomes a local repo, named after its folder, and the GitHub repo of its `origin` remote joins the pull request list. The folder is read again every 30 seconds: clone a repo there and it appears, no restart. Hidden folders, worktrees and folders without a GitHub `origin` are left out of the PR list.
+
+For anything outside that folder, add it by hand: `REPOS=owner/name,…` for GitHub repos, `LOCAL_REPOS=label=relative/path,…` for checkouts.
+
+### Reviewing local branches
 
 The review compares **commits**: `base...branch` in that checkout. Work that is not committed yet, or that only lives in another worktree, is not part of the diff. An empty diff gives a review with no findings.
 
@@ -53,13 +59,16 @@ The review compares **commits**: `base...branch` in that checkout. Work that is 
 
 | Variable | Required | Default | What it does |
 | --- | --- | --- | --- |
-| `REPOS` | yes | — | GitHub repositories to list PRs from |
 | `GH_TOKEN` | yes | — | Lists PRs and posts comments **as you** |
 | `CLAUDE_CODE_OAUTH_TOKEN` | yes | — | Runs `claude -p` inside the container |
 | `REPOS_ROOT` | no | `~/Documents` | Folder with your local checkouts |
-| `LOCAL_REPOS` | no | none | Local checkouts to offer, `label=relative/path` |
+| `SCAN_DIR` | no* | none | Folder of checkouts, relative to `REPOS_ROOT`, scanned for repos |
+| `REPOS` | no* | none | Extra GitHub repositories, `owner/name,…` |
+| `LOCAL_REPOS` | no | none | Extra local checkouts, `label=relative/path,…` |
 | `HOST_PORT` | no | `37703` | Port the app is served on |
 | `PORT` | no | `3100` | Port of the server in dev mode |
+
+\* At least one of `SCAN_DIR` or `REPOS`, or the PR list is empty.
 
 ## Using it
 
@@ -116,10 +125,11 @@ Nothing to migrate by hand: the database schema is completed at startup.
 | Symptom | Cause and fix |
 | --- | --- |
 | `docker compose up` stops with `GH_TOKEN is not set in .env` (or another variable) | Fill it in `.env`, see [Install](#install) |
+| A repository is missing from the lists | Its checkout is not directly under `SCAN_DIR`, or its `origin` is not on GitHub. The server log lists what it found at startup: `docker compose logs app \| grep repos` |
 | PR list says *GitHub is not authenticated* | `GH_TOKEN` is empty, wrong or expired. Run `gh auth token`, update `.env`, then `docker compose up -d` |
 | A review fails right away | Open its **Session**: the stderr panel shows the Claude error. Usually `CLAUDE_CODE_OAUTH_TOKEN` is missing or expired; run `claude setup-token` again |
-| Local branches list is empty | `LOCAL_REPOS` is empty, or its paths are wrong relative to `REPOS_ROOT` |
-| A local review finds nothing | The branch has no commits beyond its base. Commit the work first (see [Reviewing local branches](#reviewing-local-branches-optional)) |
+| Local branches list is empty | `SCAN_DIR` and `LOCAL_REPOS` are empty, or their paths are wrong relative to `REPOS_ROOT` |
+| A local review finds nothing | The branch has no commits beyond its base. Commit the work first (see [Reviewing local branches](#reviewing-local-branches)) |
 | Port 37703 is taken | Set `HOST_PORT` in `.env` |
 
 Logs: `docker compose logs -f app`.

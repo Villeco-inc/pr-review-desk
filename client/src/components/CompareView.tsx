@@ -192,10 +192,10 @@ export default function CompareView({
             <option value="fable">Fable</option>
           </Select>
           <Select id="compare-effort" icon="gauge" label="Effort" wrapperClassName="w-[248px]" value={launch.effort} onChange={(e) => setLaunch((l) => ({ ...l, effort: e.target.value }))} disabled={isRunning}>
-            <option value="quick">Quick · 1 turn</option>
-            <option value="standard">Standard · 3 turns</option>
-            <option value="thorough">Thorough · 10 turns</option>
-            <option value="exhaustive">Exhaustive · 25 turns</option>
+            <option value="quick">Quick · low effort</option>
+            <option value="standard">Standard · medium effort</option>
+            <option value="thorough">Thorough · high effort</option>
+            <option value="exhaustive">Exhaustive · max effort</option>
           </Select>
           <Input
             id="compare-skills"

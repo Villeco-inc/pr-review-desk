@@ -7,8 +7,8 @@ import { JUMP_KEY_LABEL, isMac } from "./CommandPalette";
 import { Segmented } from "./ui/Field";
 import { SETTINGS_SHOW_SYSTEM_SWITCH, useSystem, type System, type Theme } from "./SystemProvider";
 
-export type Section = "prs" | "local" | "compare" | "repos" | "settings";
-export type BuiltSection = "prs" | "local" | "compare";
+export type Section = "prs" | "local" | "compare" | "activity" | "repos" | "settings";
+export type BuiltSection = "prs" | "local" | "compare" | "activity";
 
 interface ShellContextValue {
   actionsEl: HTMLElement | null;
@@ -78,6 +78,7 @@ const SECTIONS: { id: Section; label: string; icon: IconName; built: boolean }[]
   { id: "prs", label: "Pull requests", icon: "pullRequest", built: true },
   { id: "local", label: "Local branches", icon: "branch", built: true },
   { id: "compare", label: "Compare", icon: "compare", built: true },
+  { id: "activity", label: "Activity", icon: "gauge", built: true },
   { id: "repos", label: "Repositories", icon: "repo", built: false },
   { id: "settings", label: "Settings", icon: "settings", built: false },
 ];

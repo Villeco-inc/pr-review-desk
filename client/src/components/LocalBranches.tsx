@@ -221,10 +221,10 @@ export default function LocalBranches({
             <option value="fable">Fable</option>
           </Select>
           <Select id="local-effort" icon="gauge" label="Effort" wrapperClassName="w-[248px]" value={effort} onChange={(e) => setEffort(e.target.value)} disabled={isRunning}>
-            <option value="quick">Quick · 1 turn</option>
-            <option value="standard">Standard · 3 turns</option>
-            <option value="thorough">Thorough · 10 turns</option>
-            <option value="exhaustive">Exhaustive · 25 turns</option>
+            <option value="quick">Quick · low effort</option>
+            <option value="standard">Standard · medium effort</option>
+            <option value="thorough">Thorough · high effort</option>
+            <option value="exhaustive">Exhaustive · max effort</option>
           </Select>
           <Input
             id="local-skills"

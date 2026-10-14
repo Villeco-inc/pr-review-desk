@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { compareRepoSegment, reviewRepoSegment, type CompareSearch, type LocalSearch } from "./lib/url-state";
+import type { ActivitySearch } from "./components/ActivityView";
 
 const splitRepo = (repo: string) => {
   const i = repo.indexOf("/");
@@ -58,6 +59,7 @@ export function useGo() {
           search: { branch, base },
           ...opts,
         }),
+      activity: (search: ActivitySearch = {}, opts: { replace?: boolean } = {}) => navigate({ to: "/activity", search, ...opts }),
       compareList: () => navigate({ to: "/compare" }),
       compare: (ghRepo: string, search: CompareSearch, opts: { replace?: boolean } = {}) =>
         navigate({ to: "/compare/$owner/$repo", params: splitRepo(ghRepo), search, ...opts }),

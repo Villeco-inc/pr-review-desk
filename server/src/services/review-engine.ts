@@ -14,6 +14,8 @@ import {
   type ExistingReviewComment,
 } from "./github";
 import { closesString, parseReport } from "./findings-parser";
+import { scopeDiff, type DiffScope } from "./diff-scope";
+import { track } from "../db/telemetry";
 import { splitUnifiedDiff } from "./diff-utils";
 import { getLocalDiff, getLatestCommitMessage, localRepoIdentity } from "./local-git";
 import { appendStderr, appendStreamLine, createRun, finishRun, getRunSession, recordStats, statsFromEvent } from "./run-log";
@@ -23,7 +25,6 @@ export const reviewEvents = new EventEmitter();
 reviewEvents.setMaxListeners(0);
 
 const CLAUDE_CANDIDATES = ["claude", `${os.homedir()}/.local/bin/claude`, "/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
-const MAX_DIFF_CHARS_PER_FILE = 20_000;
 
 let resolvedClaudePath: string | null = null;
 
@@ -82,17 +83,6 @@ const FINDINGS_SCHEMA_TEXT = `{
   ]
 }`;
 
-function truncateDiff(diff: string): string {
-  const files = splitUnifiedDiff(diff);
-  if (files.length === 0) return diff;
-
-  return files
-    .map((f) =>
-      f.patch.length > MAX_DIFF_CHARS_PER_FILE ? `${f.patch.slice(0, MAX_DIFF_CHARS_PER_FILE)}\n... [truncated]` : f.patch
-    )
-    .join("\n");
-}
-
 interface ExistingReviewContext {
   reviews: ExistingReview[];
   comments: ExistingReviewComment[];
@@ -126,10 +116,24 @@ ${[...reviewBlocks, ...commentBlocks].join("\n\n")}
 interface PromptOptions {
   skills: string[];
   existing?: ExistingReviewContext;
+  scope: DiffScope;
+}
+
+function formatNotShown(scope: DiffScope): string {
+  if (scope.omitted.length === 0 && scope.truncated.length === 0) return "";
+  const lines = [
+    ...scope.omitted.map((f) => `- ${f.path} : omis (${f.reason})`),
+    ...scope.truncated.map((f) => `- ${f.path} : coupé, seuls les ${f.keptChars} premiers caractères sur ${f.chars} sont montrés`),
+  ];
+  return `
+## Fichiers absents ou incomplets dans le diff
+Ces fichiers font partie du changement mais ne sont pas montrés en entier. Ne rapporte rien sur ce que tu n'as pas vu ; signale dans le summary si leur absence t'empêche de conclure.
+${lines.join("\n")}
+`;
 }
 
 function buildPrompt(subjectLine: string, snapshot: PrSnapshot, diff: string, options: PromptOptions): string {
-  const { skills, existing } = options;
+  const { skills, existing, scope } = options;
   const fileList = (snapshot.files ?? [])
     .map((f) => {
       const file = f as { path?: string; additions?: number; deletions?: number };
@@ -155,8 +159,8 @@ ${snapshot.body || "(no description)"}
 ${fileList}
 
 ## Diff
-${truncateDiff(diff)}
-${existingSection}
+${scope.text}
+${formatNotShown(scope)}${existingSection}
 ## Instructions
 ${instructions}
 
@@ -281,12 +285,12 @@ export function getThreadLog(id: string): string[] {
   return threadLogs.get(id) ?? [];
 }
 
-function runClaude(id: string, runId: string, prompt: string, model?: string, maxTurns?: number): Promise<string> {
+function runClaude(id: string, runId: string, prompt: string, model: string | undefined, effortLevel: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const claudePath = resolveClaudePath();
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--tools", ""];
     if (model) args.push("--model", model);
-    if (maxTurns) args.push("--max-turns", String(maxTurns));
+    args.push("--effort", effortLevel);
     log(id, `spawning: ${claudePath} ${args.join(" ")} (prompt via stdin: ${prompt.length} chars)`);
 
     const child = spawn(claudePath, args, {
@@ -297,6 +301,8 @@ function runClaude(id: string, runId: string, prompt: string, model?: string, ma
     child.stdin.end();
 
     log(id, `claude process started, pid=${child.pid}, prompt written to stdin`);
+    const startedAt = Date.now();
+    track("claude", "spawn", { reviewId: id, runId, payload: { args: args.join(" "), promptChars: prompt.length, pid: child.pid ?? null } });
 
     let buffer = "";
     let textOut = "";
@@ -342,6 +348,13 @@ function runClaude(id: string, runId: string, prompt: string, model?: string, ma
 
     child.on("close", (code, signal) => {
       log(id, `claude process exited: code=${code} signal=${signal} lines=${lineCount} textOut=${textOut.length} chars`);
+      track("claude", "exit", {
+        reviewId: id,
+        runId,
+        status: code === 0 ? "ok" : "error",
+        durationMs: Date.now() - startedAt,
+        payload: { code, signal, streamLines: lineCount, outputChars: textOut.length, stderrChars: stderrOut.length },
+      });
       if (buffer.trim()) {
         lineCount++;
         keep(buffer.trim());
@@ -419,11 +432,12 @@ function failReview(id: string, message: string): void {
   emit(id, "status", { status: "failed", error: message });
 }
 
-const EFFORT_MAX_TURNS: Record<string, number> = {
-  quick: 1,
-  standard: 3,
-  thorough: 10,
-  exhaustive: 25,
+// With no tools the agent always answers in one turn, so effort sets how hard it thinks (claude --effort).
+const EFFORT_LEVEL: Record<string, string> = {
+  quick: "low",
+  standard: "medium",
+  thorough: "high",
+  exhaustive: "max",
 };
 
 interface RunOptions {
@@ -447,25 +461,48 @@ async function runReview(id: string, repo: string, number: number, subjectLine: 
     }
   }
 
-  log(id, `building prompt (diff: ${diff.length} chars, files: ${(snapshot.files ?? []).length}, challenge=${challengeExisting})`);
-  const prompt = buildPrompt(subjectLine, snapshot, diff, { skills, existing });
+  const scope = scopeDiff(diff);
+  log(id, `building prompt (diff: ${diff.length} chars, sent ${scope.sentFiles} files, omitted ${scope.omitted.length}, truncated ${scope.truncated.length}, challenge=${challengeExisting})`);
+  const prompt = buildPrompt(subjectLine, snapshot, diff, { skills, existing, scope });
   log(id, `prompt built: ${prompt.length} chars`);
 
-  const maxTurns = EFFORT_MAX_TURNS[effort ?? "standard"] ?? 3;
-  const runId = createRun(id, prompt, { model, effort, maxTurns, skills });
+  const effortLevel = EFFORT_LEVEL[effort ?? "standard"] ?? "medium";
+  const runId = createRun(id, prompt, { model, effort, effortLevel, skills, scope });
+  track("review", "run.started", {
+    reviewId: id,
+    runId,
+    repo,
+    payload: {
+      model: model ?? null,
+      effort: effort ?? null,
+      effortLevel,
+      skills,
+      diffChars: diff.length,
+      promptChars: prompt.length,
+      sentFiles: scope.sentFiles,
+      omitted: scope.omitted,
+      truncated: scope.truncated,
+      challengeExisting,
+      existingReviews: existing ? existing.reviews.length + existing.comments.length : 0,
+    },
+  });
+  const startedAt = Date.now();
   try {
-    await runAgent(id, runId, prompt, model, effort, maxTurns);
+    await runAgent(id, runId, prompt, model, effortLevel);
     finishRun(runId, "reported");
+    track("review", "run.reported", { reviewId: id, runId, repo, status: "ok", durationMs: Date.now() - startedAt, payload: runNumbers(runId) });
   } catch (err) {
-    finishRun(runId, "failed", err instanceof Error ? err.message : String(err));
+    const message = err instanceof Error ? err.message : String(err);
+    finishRun(runId, "failed", message);
+    track("review", "run.failed", { reviewId: id, runId, repo, status: "error", durationMs: Date.now() - startedAt, payload: { error: message.slice(0, 2000), ...runNumbers(runId) } });
     throw err;
   }
 }
 
-async function runAgent(id: string, runId: string, prompt: string, model: string | undefined, effort: string | undefined, maxTurns: number): Promise<void> {
-  log(id, `starting claude subprocess (run ${runId})...${model ? ` model=${model}` : " (default model)"} effort=${effort ?? "standard"} maxTurns=${maxTurns}`);
+async function runAgent(id: string, runId: string, prompt: string, model: string | undefined, effortLevel: string): Promise<void> {
+  log(id, `starting claude subprocess (run ${runId})...${model ? ` model=${model}` : " (default model)"} effort=${effortLevel}`);
   threadLogs.delete(id);
-  const assistantText = await runClaude(id, runId, prompt, model, maxTurns);
+  const assistantText = await runClaude(id, runId, prompt, model, effortLevel);
   log(id, `claude finished, output: ${assistantText.length} chars`);
   importReport(id, assistantText);
 }
@@ -488,6 +525,15 @@ function importReport(id: string, assistantText: string): void {
   }
 
   log(id, `parsed: ${result.report.findings.length} findings, ${result.warnings.length} warnings`);
+  track("review", "report.parsed", {
+    reviewId: id,
+    payload: {
+      findings: result.report.findings.length,
+      bySeverity: result.report.findings.reduce<Record<string, number>>((acc, f) => ({ ...acc, [f.severity]: (acc[f.severity] ?? 0) + 1 }), {}),
+      warnings: result.warnings.map((w) => w.reason),
+      reportChars: jsonBlock.length,
+    },
+  });
   for (const w of result.warnings) {
     log(id, `  warning: finding ${w.index}: ${w.reason}`);
   }
@@ -522,6 +568,7 @@ export async function startReview(
   const now = new Date().toISOString();
 
   log(id, `=== STARTING REVIEW === repo=${repo} number=${number} skills=[${skills.join(",")}]`);
+  track("review", "requested", { reviewId: id, repo, payload: { source: "pr", number, model: model ?? null, effort: effort ?? null, skills, challengeExisting } });
 
   log(id, "fetching PR diff and snapshot from GitHub...");
   const [diff, snapshot] = await Promise.all([fetchPrDiff(repo, number), fetchPrSnapshot(repo, number)]);
@@ -573,6 +620,7 @@ export async function startLocalReview(
   const now = new Date().toISOString();
 
   log(id, `=== STARTING LOCAL REVIEW === repo=${repoLabel} branch=${branch} base=${base}`);
+  track("review", "requested", { reviewId: id, repo: repoLabel, payload: { source: "local", branch, base, model: model ?? null, effort: effort ?? null, skills } });
 
   const [{ diff, files, baseRef, ownCommits, worktree, uncommittedFiles }, { subject, body }] = await Promise.all([
     getLocalDiff(repoPath, branch, base),
@@ -638,6 +686,14 @@ export async function startLocalReview(
  * A compare review has no PR number: it is keyed by repo and head, so "main of linea-geo-api"
  * stays one review whose base (the tag in production) moves forward over time.
  */
+/** The numbers a finished run recorded (cost, tokens, turns), for the event that closes it. */
+function runNumbers(runId: string): Record<string, unknown> {
+  const row = getDb()
+    .prepare("SELECT num_turns, duration_ms, cost_usd, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, session_id FROM review_runs WHERE id = ?")
+    .get(runId) as Record<string, unknown> | undefined;
+  return row ?? {};
+}
+
 export function compareIdentity(repo: string, head: string): { repo: string; number: number } {
   const hash = createHash("sha1").update(`${repo}@${head}`).digest("hex").slice(0, 10);
   return { repo: `compare/${repo.split("/")[1] ?? repo}-${hash}`, number: 0 };
@@ -657,6 +713,7 @@ export async function startCompareReview(
   const now = new Date().toISOString();
 
   log(id, `=== STARTING COMPARE REVIEW === repo=${repo} ${base}...${head}`);
+  track("review", "requested", { reviewId: id, repo, payload: { source: "compare", base, head, model: model ?? null, effort: effort ?? null, skills } });
   const compare = await fetchCompare(repo, base, head);
   if (compare.truncated) {
     throw new Error(
@@ -737,5 +794,6 @@ export function reimportRun(runId: string): { reviewId: string; findings: number
   getDb().prepare("UPDATE reviews SET error = NULL WHERE id = ?").run(id);
   finishRun(runId, "reported");
   const count = (getDb().prepare("SELECT COUNT(*) AS n FROM findings WHERE review_id = ?").get(id) as { n: number }).n;
+  track("review", "run.reimported", { reviewId: id, runId, payload: { findings: count } });
   return { reviewId: id, findings: count };
 }
