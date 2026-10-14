@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
-import { reviewEvents, reviewId, startReview, getThreadLog, reimportRun } from "../services/review-engine";
+import { reviewEvents, reviewOutcomes, reviewId, startReview, getThreadLog, reimportRun } from "../services/review-engine";
 import { splitUnifiedDiff, findPatchForFile } from "../services/diff-utils";
 import { toFindingDto, toReviewDto } from "../services/dto";
 import { getRunSession, listRuns } from "../services/run-log";
-import type { FindingRow, ReviewEvent, ReviewRow } from "../../../shared/types";
+import type { FindingRow, ReviewEvent, ReviewOutcome, ReviewRow } from "../../../shared/types";
 
 export const reviewsRouter = Router();
 
@@ -89,6 +89,17 @@ reviewsRouter.get("/reviews/:owner/:name/:number", (req, res) => {
   const findings = loadFindings(id).map((row) => toFindingDto(row, patches));
 
   res.json({ review: toReviewDto(review), findings });
+});
+
+reviewsRouter.get("/reviews/outcomes", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  const listener = (outcome: ReviewOutcome) => res.write(`data: ${JSON.stringify(outcome)}\n\n`);
+  reviewOutcomes.on("outcome", listener);
+  req.on("close", () => reviewOutcomes.off("outcome", listener));
 });
 
 reviewsRouter.get("/reviews/:owner/:name/:number/events", (req, res) => {

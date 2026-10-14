@@ -6,6 +6,7 @@ import { useQuery } from "../hooks/useApi";
 import { JUMP_KEY_LABEL, isMac } from "./CommandPalette";
 import { Segmented } from "./ui/Field";
 import { SETTINGS_SHOW_SYSTEM_SWITCH, useSystem, type System, type Theme } from "./SystemProvider";
+import { useNotificationPermission } from "../hooks/useReviewNotifications";
 
 export type Section = "prs" | "local" | "compare" | "activity" | "repos" | "settings";
 export type BuiltSection = "prs" | "local" | "compare" | "activity";
@@ -178,6 +179,7 @@ function Rail({
       </nav>
 
       <div className="mt-auto flex flex-col gap-3 edge-t border-rail-line pt-4">
+        <NotificationsButton />
         {SETTINGS_SHOW_SYSTEM_SWITCH && <SystemSwitch />}
         {/* Repo switching still lives in each list's filter bar; this is the placeholder for it. */}
         <button
@@ -219,5 +221,22 @@ function SystemSwitch() {
       <span className="mt-1.5 px-1 label-caps text-rail-fg">Mode</span>
       <Segmented block ariaLabel="Colour mode" value={theme} onChange={setTheme} options={THEMES} />
     </div>
+  );
+}
+
+/** Shown until the browser is allowed to notify: it may only ask from a click. */
+function NotificationsButton() {
+  const [permission, request] = useNotificationPermission();
+  if (permission !== "default") return null;
+  return (
+    <button
+      type="button"
+      onClick={request}
+      title="Get a system notification when a review finishes or fails"
+      className="flex h-[38px] w-full items-center gap-2 edge border-rail-line px-2.5 text-left text-rail-fg hover:border-rail-accent hover:text-rail-accent focus-ring"
+    >
+      <Icon name="bell" className="size-3.5 shrink-0" />
+      <span className="flex-1 label-caps">Enable notifications</span>
+    </button>
   );
 }

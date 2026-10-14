@@ -19,10 +19,16 @@ import { track } from "../db/telemetry";
 import { splitUnifiedDiff } from "./diff-utils";
 import { getLocalDiff, getLatestCommitMessage, localRepoIdentity } from "./local-git";
 import { appendStderr, appendStreamLine, createRun, finishRun, getRunSession, recordStats, statsFromEvent } from "./run-log";
-import type { Finding, Report, ReviewEvent } from "../../../shared/types";
+import type { Finding, Report, ReviewEvent, ReviewOutcome, ReviewTarget } from "../../../shared/types";
 
 export const reviewEvents = new EventEmitter();
 reviewEvents.setMaxListeners(0);
+
+/** Every review that finishes or fails, whichever page started it: emitted as "outcome". */
+export const reviewOutcomes = new EventEmitter();
+reviewOutcomes.setMaxListeners(0);
+
+const reviewTargets = new Map<string, ReviewTarget>();
 
 const CLAUDE_CANDIDATES = ["claude", `${os.homedir()}/.local/bin/claude`, "/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
 
@@ -40,6 +46,24 @@ function emit(id: string, type: ReviewEvent["type"], data: unknown): void {
   const event: ReviewEvent = { type, reviewId: id, data };
   log("emit", `${type} for ${id}`, JSON.stringify(data).slice(0, 200));
   reviewEvents.emit(id, event);
+}
+
+function targetTitle(target: ReviewTarget | null, fallback: string): string {
+  if (target?.kind === "pr") return `${target.repo}#${target.number}`;
+  if (target?.kind === "local") return `${target.repoLabel} · ${target.branch}`;
+  if (target?.kind === "compare") return `${target.ghRepo} · ${target.head} vs ${target.base}`;
+  return fallback;
+}
+
+function announce(id: string, outcome: Pick<ReviewOutcome, "status" | "findings" | "error">): void {
+  const row = getDb().prepare("SELECT repo, number, title FROM reviews WHERE id = ?").get(id) as
+    | { repo: string; number: number; title: string }
+    | undefined;
+  // After a server restart the map is empty; only a PR review can be found again from its id.
+  const target =
+    reviewTargets.get(id) ?? (row && !/^(local|compare)\//.test(row.repo) ? { kind: "pr" as const, repo: row.repo, number: row.number } : null);
+  const title = [targetTitle(target, id), row?.title].filter(Boolean).join(" — ");
+  reviewOutcomes.emit("outcome", { reviewId: id, title, target, ...outcome } satisfies ReviewOutcome);
 }
 
 function resolveClaudePath(): string {
@@ -430,6 +454,7 @@ function failReview(id: string, message: string): void {
     id
   );
   emit(id, "status", { status: "failed", error: message });
+  announce(id, { status: "failed", error: message });
 }
 
 // With no tools the agent always answers in one turn, so effort sets how hard it thinks (claude --effort).
@@ -553,6 +578,7 @@ function importReport(id: string, assistantText: string): void {
   );
   log(id, `REVIEW COMPLETED: ${result.report.findings.length} findings, summary: ${result.report.summary.slice(0, 200)}`);
   emit(id, "status", { status: "reported" });
+  announce(id, { status: "reported", findings: result.report.findings.length });
 }
 
 export async function startReview(
@@ -594,6 +620,7 @@ export async function startReview(
   });
   log(id, "review saved with status=running");
 
+  reviewTargets.set(id, { kind: "pr", repo, number });
   emit(id, "status", { status: "running" });
 
   log(id, `launching review in background...${model ? ` model=${model}` : ""} effort=${effort ?? "standard"} challenge=${challengeExisting}`);
@@ -669,6 +696,7 @@ export async function startLocalReview(
     updated_at: now,
   });
 
+  reviewTargets.set(id, { kind: "local", repo, number, repoLabel, branch, base });
   emit(id, "status", { status: "running" });
 
   const scope = [ownCommits > 0 && `${ownCommits} commit${ownCommits > 1 ? "s" : ""}`, uncommittedFiles > 0 && `${uncommittedFiles} uncommitted file${uncommittedFiles > 1 ? "s" : ""}`]
@@ -757,6 +785,7 @@ export async function startCompareReview(
     updated_at: now,
   });
 
+  reviewTargets.set(id, { kind: "compare", repo: identity.repo, number: identity.number, ghRepo: repo, base, head });
   emit(id, "status", { status: "running" });
 
   const subjectLine = `Review the ${compare.aheadBy} commit${compare.aheadBy > 1 ? "s" : ""} on \`${head}\` of ${repo} that are not in \`${base}\` yet — ${snapshot.title}`;

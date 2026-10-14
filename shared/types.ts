@@ -157,6 +157,22 @@ export interface ReviewEvent {
   data: unknown;
 }
 
+/** The screen a review opens on, so a notification can lead back to it. */
+export type ReviewTarget =
+  | { kind: "pr"; repo: string; number: number }
+  | { kind: "local"; repo: string; number: number; repoLabel: string; branch: string; base: string }
+  | { kind: "compare"; repo: string; number: number; ghRepo: string; base: string; head: string };
+
+/** A review that just finished or failed, pushed to every open tab. */
+export interface ReviewOutcome {
+  reviewId: string;
+  status: "reported" | "failed";
+  title: string;
+  findings?: number;
+  error?: string;
+  target: ReviewTarget | null;
+}
+
 /** One execution of the review agent. A review keeps every run; the latest one produced its findings. */
 export interface ReviewRunRow {
   id: string;

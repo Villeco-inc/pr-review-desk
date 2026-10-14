@@ -6,6 +6,7 @@ import CommandPalette, { type JumpTarget } from "./components/CommandPalette";
 import { useGo } from "./nav";
 import { compareRepoFromSegment, reviewRepoFromSegment } from "./lib/url-state";
 import { trackScreen } from "./lib/telemetry";
+import { useReviewNotifications } from "./hooks/useReviewNotifications";
 
 /** The root layout: rail, crumb bar and palette around whichever route is active. */
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
   const params = (leaf?.params ?? {}) as Record<string, string | undefined>;
   const search = (leaf?.search ?? {}) as { branch?: string; base?: string; head?: string };
   const location = useLocation();
+  useReviewNotifications();
 
   useEffect(() => {
     trackScreen(location.pathname, location.searchStr, routeId);
