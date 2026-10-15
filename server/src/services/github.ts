@@ -390,6 +390,22 @@ export async function submitReview(
   return { url: parsed.html_url };
 }
 
+/** Every repository the token can see — its own, collaborations and its organizations' — as owner/name, sorted. */
+export async function listAccessibleRepos(): Promise<string[]> {
+  const stdout = await runGh([
+    "api",
+    "--paginate",
+    "user/repos?per_page=100&affiliation=owner,collaborator,organization_member",
+    "-q",
+    ".[].full_name",
+  ]);
+  return stdout
+    .split("\n")
+    .map((r) => r.trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
 let viewerLogin: Promise<string> | null = null;
 
 /** The authenticated gh user. Memoized: it cannot change while the process runs. */

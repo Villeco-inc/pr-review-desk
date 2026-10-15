@@ -1,17 +1,11 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
-import { listPullRequests, listOrgPullRequests, fetchPrSnapshot, getViewer } from "../services/github";
+import { listPullRequests, listOrgPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } from "../services/github";
+import { saveSelectedRepos, selectedRepos } from "../services/repo-selection";
 import { reviewId } from "../services/review-engine";
 import type { FindingRow, MyReviewState, PullRequest, PullRequestDto, ReviewRow } from "../../../shared/types";
 
 export const prsRouter = Router();
-
-function configuredRepos(): string[] {
-  return (process.env.REPOS ?? "")
-    .split(",")
-    .map((r) => r.trim())
-    .filter(Boolean);
-}
 
 function reviewStatusFor(repo: string, number: number): ReviewRow | undefined {
   const db = getDb();
@@ -34,7 +28,29 @@ function myReviewFor(pr: PullRequest, viewer: string | null): MyReviewState | nu
 }
 
 prsRouter.get("/repos", (_req, res) => {
-  res.json(configuredRepos());
+  res.json(selectedRepos(getDb(), process.env.REPOS));
+});
+
+prsRouter.put("/repos", (req, res) => {
+  const { repos } = req.body as { repos?: unknown };
+  if (!Array.isArray(repos) || !repos.every((r) => typeof r === "string")) {
+    res.status(400).json({ error: "repos must be a list of owner/name" });
+    return;
+  }
+  try {
+    saveSelectedRepos(getDb(), repos);
+    res.json(selectedRepos(getDb(), process.env.REPOS));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+prsRouter.get("/repos/available", async (_req, res) => {
+  try {
+    res.json(await listAccessibleRepos());
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 prsRouter.get("/viewer", async (_req, res) => {

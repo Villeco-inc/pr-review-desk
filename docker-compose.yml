@@ -6,14 +6,14 @@ services:
     volumes:
       - ./data:/app/data                                # SQLite database and review sessions
       - ${REPOS_ROOT:-${HOME}/Documents}:/repos:ro      # local checkouts, for reviewing branches before a PR
-    # Everything personal comes from .env (copy .env.example). A missing required value
-    # stops `docker compose up` with the message below instead of starting a broken app.
+    # Start with ./start.sh: it hands GH_TOKEN over from gh and writes CLAUDE_CODE_OAUTH_TOKEN to .env.
+    # A missing Claude token stops `docker compose up` with the message below instead of starting a broken app.
     environment:
       - PORT=3100
       - NODE_ENV=production
-      - REPOS=${REPOS:?REPOS is not set in .env - see .env.example}
+      - REPOS=${REPOS:-}                                # optional: repositories are picked in the app
       - LOCAL_REPOS=${LOCAL_REPOS:-}
       - LOCAL_REPOS_ROOT=/repos
-      - GH_TOKEN=${GH_TOKEN:?GH_TOKEN is not set in .env - run gh auth token}
-      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:?CLAUDE_CODE_OAUTH_TOKEN is not set in .env - run claude setup-token}
+      - GH_TOKEN=${GH_TOKEN:-}                          # set by ./start.sh from gh; a value in .env also works
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:?CLAUDE_CODE_OAUTH_TOKEN is not set in .env - run ./start.sh}
     restart: unless-stopped

@@ -64,7 +64,7 @@ export function useQuery<T>(url: string | null, deps: unknown[] = [], staleMs = 
   return { ...state, refetch };
 }
 
-export function useMutation<T>(url: string, method: "POST" | "PATCH" | "DELETE" = "POST") {
+export function useMutation<T>(url: string, method: "POST" | "PUT" | "PATCH" | "DELETE" = "POST") {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
