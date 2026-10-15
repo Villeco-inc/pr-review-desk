@@ -37,8 +37,13 @@ exit 0
 const FAKES: Record<string, string> = {
   docker: `#!/bin/sh
 [ -f "$FAKE_STATE/docker-down" ] && [ "$1" = "info" ] && exit 1
+if [ "$1" = "ps" ]; then port="\${3#publish=}"; [ -f "$FAKE_STATE/port-owner-$port" ] && cat "$FAKE_STATE/port-owner-$port"; exit 0; fi
 if [ "$1" = "compose" ]; then echo "docker $* GH_TOKEN=$GH_TOKEN" >> "$FAKE_STATE/calls.log"; else echo "docker $*" >> "$FAKE_STATE/calls.log"; fi
 exit 0
+`,
+  nc: `#!/bin/sh
+for port; do :; done
+[ -f "$FAKE_STATE/port-busy-$port" ]
 `,
   uname: `#!/bin/sh
 case "$1" in -s) echo "\${FAKE_OS:-Darwin}" ;; -m) echo arm64 ;; esac
@@ -93,6 +98,9 @@ interface Machine {
   docker?: "running" | "stopped" | "missing";
   env?: string | null;
   badChecksum?: boolean;
+  busyPort?: number;
+  /** Folder of the Compose project whose container publishes busyPort: "self" is this checkout. */
+  portOwner?: "self" | string;
 }
 
 function setUp(m: Machine = {}) {
@@ -111,6 +119,12 @@ function setUp(m: Machine = {}) {
   const write = (dir: string, name: string, body: string) => fs.writeFileSync(path.join(dir, name), body, { mode: 0o755 });
   write(bin, "uname", FAKES.uname);
   write(bin, "curl", FAKES.curl);
+  write(bin, "nc", FAKES.nc);
+  if (m.busyPort) fs.writeFileSync(path.join(state, `port-busy-${m.busyPort}`), "");
+  if (m.busyPort && m.portOwner) {
+    const owner = m.portOwner === "self" ? fs.realpathSync(project) : m.portOwner;
+    fs.writeFileSync(path.join(state, `port-owner-${m.busyPort}`), `${owner}\n`);
+  }
   if ((m.docker ?? "running") !== "missing") write(bin, "docker", FAKES.docker);
   if (m.docker === "stopped") fs.writeFileSync(path.join(state, "docker-down"), "");
   if (m.brew ?? true) write(bin, "brew", FAKES.brew);
@@ -198,6 +212,46 @@ describe("start.sh and Docker", () => {
     expect(r.out).toContain("Démarre Docker Desktop");
     expect(m.started()).toEqual([]);
     expect(m.calls().filter((c) => c.startsWith("gh"))).toEqual([]);
+  });
+});
+
+describe("start.sh and the port", () => {
+  it("stops before installing or starting anything when another app holds the port", () => {
+    const m = setUp({ busyPort: 37703, gh: false });
+    const r = m.run("o\n");
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("Le port 37703 est déjà utilisé");
+    expect(r.out).toContain("HOST_PORT=37704");
+    expect(m.calls()).toEqual(["docker info"]);
+  });
+
+  it("checks the port set in .env", () => {
+    const m = setUp({ busyPort: 4100, env: "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-saved\nHOST_PORT=4100\n" });
+    const r = m.run();
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("Le port 4100 est déjà utilisé");
+    expect(m.started()).toEqual([]);
+  });
+
+  it("restarts normally when the port is held by this app's own container", () => {
+    const m = setUp({ busyPort: 37703, portOwner: "self" });
+    expect(m.run().code).toBe(0);
+    expect(m.started()).toEqual(["docker compose up -d --build GH_TOKEN=gho_active"]);
+  });
+
+  it("restarts and asks for a new Claude token when its line was emptied", () => {
+    const m = setUp({ busyPort: 37703, portOwner: "self", env: "CLAUDE_CODE_OAUTH_TOKEN=\n" });
+    expect(m.run("sk-ant-oat01-new\n").code).toBe(0);
+    expect(m.readEnv()).toBe("CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-new\n");
+    expect(m.started()).toEqual(["docker compose up -d --build GH_TOKEN=gho_active"]);
+  });
+
+  it("stops when the port is held by another checkout, even one in a folder with the same name", () => {
+    const m = setUp({ busyPort: 37703, portOwner: "/Users/someone/Documents/project" });
+    const r = m.run();
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("Le port 37703 est déjà utilisé");
+    expect(m.started()).toEqual([]);
   });
 });
 

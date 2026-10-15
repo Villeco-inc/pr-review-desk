@@ -151,6 +151,18 @@ save_claude_token() {
 command -v docker >/dev/null 2>&1 || fail "Docker n'est pas installé. Installe Docker Desktop (https://www.docker.com/products/docker-desktop/), puis relance ./start.sh."
 docker info >/dev/null 2>&1 || fail "Docker ne tourne pas. Démarre Docker Desktop, attends qu'il soit prêt, puis relance ./start.sh."
 
+# The port must be free, unless this app's own container already holds it (a restart).
+PORT="${HOST_PORT:-$(sed -n 's/^HOST_PORT=//p' .env 2>/dev/null | tail -n 1)}"
+PORT="${PORT:-37703}"
+# Docker names the folder of the Compose project whose container publishes the port; the project
+# name alone would mistake another checkout in a folder with the same name for this one.
+PORT_OWNER="$(docker ps --filter "publish=$PORT" --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | head -n 1)"
+if [ "$PORT_OWNER" != "$(pwd -P)" ] && { [ -n "$PORT_OWNER" ] || { command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; }; }; then
+  FREE="$((PORT + 1))"
+  while [ "$FREE" -lt "$((PORT + 20))" ] && nc -z 127.0.0.1 "$FREE" >/dev/null 2>&1; do FREE="$((FREE + 1))"; done
+  fail "Le port $PORT est déjà utilisé (une autre instance de pr-review-desk ?). Ajoute HOST_PORT=$FREE dans .env, puis relance ./start.sh."
+fi
+
 # On Linux nothing is installed: name every missing tool at once.
 if [ "$OS" != "Darwin" ]; then
   MISSING=""
@@ -190,5 +202,4 @@ fi
 
 # 4. Start.
 docker compose up -d --build || fail "docker compose up a échoué."
-PORT="${HOST_PORT:-$(sed -n 's/^HOST_PORT=//p' .env 2>/dev/null | tail -n 1)}"
-echo "✓ pr-review-desk tourne : http://localhost:${PORT:-37703}"
+echo "✓ pr-review-desk tourne : http://localhost:$PORT"
