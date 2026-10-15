@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "../hooks/useApi";
+import { useRepos } from "../hooks/useRepos";
 import type { PullRequestDto, ReviewDto } from "../../../shared/types";
 import StatusBadge, { MyReviewBadge } from "./StatusBadge";
 import Button from "./ui/Button";
@@ -13,6 +14,7 @@ import { useToast } from "./ui/Toast";
 import { formatCount, relativeTime } from "../lib/format";
 import { ShellActions, useRailCount } from "./AppShell";
 import { focusedAttr, moveFocus, useHotkeys } from "../hooks/useHotkeys";
+import { describePrListError } from "../lib/github-errors";
 import { savePrOrder, type PrListSearch, type SortKey, type SortDir } from "../lib/url-state";
 
 const TH = "h-10 whitespace-nowrap bg-subtle px-3 text-left label-caps text-fg-2 edge-b first:pl-4";
@@ -64,7 +66,7 @@ export default function PRList({
   onRepoChange: (repo: string) => void;
   onSelectPR: (repo: string, number: number) => void;
 }) {
-  const { data: repos } = useQuery<string[]>("/api/repos");
+  const { data: repos } = useRepos();
   const { data: viewer } = useQuery<{ login: string }>("/api/viewer", [], 5 * 60_000);
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshedAt, setRefreshedAt] = useState<string | null>(null);
@@ -231,9 +233,7 @@ export default function PRList({
           <Icon name="alert" className="size-4 text-danger-ink" />
           <span className="font-medium">Could not load pull requests</span>
           <span className="font-mono text-xs text-danger-ink">
-            {/gh auth login|GH_TOKEN|Bad credentials|HTTP 401/.test(error)
-              ? "GitHub is not authenticated: set GH_TOKEN in .env (gh auth token), then restart the app."
-              : error}
+            {describePrListError(error)}
           </span>
           <Button size="sm" className="ml-auto" onClick={refresh}>
             <Icon name="refresh" />
