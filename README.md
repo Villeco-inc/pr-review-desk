@@ -20,7 +20,7 @@ cd pr-review-desk
 
 The first run walks you through everything, and stops with the exact command to run if you answer no:
 
-1. Checks that Docker is installed and running.
+1. Checks that Docker is installed and running, and that the app's port (37703 unless `HOST_PORT` says otherwise) is free. Restarting this same install is fine: its own container may hold the port.
 2. Installs the GitHub CLI (`gh`) if it is missing: with Homebrew when you have it, otherwise the official release from GitHub, checked against its checksum and put in `~/.local/bin`.
 3. Logs you in to GitHub (`gh auth login`, in your browser) if you are not logged in yet.
 4. Installs Claude Code (`claude`) with its official installer if it is missing, runs `claude setup-token` and asks you to paste the token. It is saved in `.env`, and nothing else is written there.
@@ -124,7 +124,7 @@ Nothing to migrate by hand: the database schema is completed at startup.
 | A review fails right away | Open its **Session**: the stderr panel shows the Claude error. Usually `CLAUDE_CODE_OAUTH_TOKEN` is missing or expired: delete its line in `.env`, then run `./start.sh` |
 | Local branches list is empty | `LOCAL_REPOS` is empty, or its paths are wrong relative to `REPOS_ROOT` |
 | A local review finds nothing | The branch has no commits beyond its base. Commit the work first (see [Reviewing local branches](#reviewing-local-branches-optional)) |
-| Port 37703 is taken | Set `HOST_PORT` in `.env` |
+| `./start.sh` says the port is already in use | Another app holds it, often a second install of pr-review-desk. Add the `HOST_PORT=…` it suggests to `.env`, then run `./start.sh` again |
 
 Logs: `docker compose logs -f app`.
 
