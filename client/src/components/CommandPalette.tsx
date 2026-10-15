@@ -11,10 +11,22 @@ export type JumpTarget =
   | { kind: "finding"; repo: string; number: number; findingId: string }
   | { kind: "local-review"; repo: string; number: number; repoLabel: string; branch: string; base: string }
   | { kind: "local-finding"; repo: string; number: number; repoLabel: string; branch: string; base: string; findingId: string }
-  | { kind: "local-branch"; repoLabel: string; branch: string };
+  | { kind: "local-branch"; repoLabel: string; branch: string }
+  | { kind: "pick-repos" };
 
-type Group = "Pull requests" | "Local branches" | "Findings";
-const GROUPS: Group[] = ["Pull requests", "Local branches", "Findings"];
+type Group = "Actions" | "Pull requests" | "Local branches" | "Findings";
+const GROUPS: Group[] = ["Actions", "Pull requests", "Local branches", "Findings"];
+
+const ACTIONS: Item[] = [
+  {
+    id: "action:pick-repos",
+    group: "Actions",
+    icon: "repo",
+    title: "Pick repositories",
+    meta: "choose which repositories the pull request list follows",
+    target: { kind: "pick-repos" },
+  },
+];
 const PER_GROUP = 8;
 
 interface Item {
@@ -62,7 +74,7 @@ async function loadIndex(onUpdate: (items: Item[]) => void): Promise<void> {
 
   const labelFor = (repoId: string) => (localRepos ?? []).find((r) => repoId.startsWith(`local/${r.label}-`))?.label ?? "";
 
-  const items: Item[] = [];
+  const items: Item[] = [...ACTIONS];
   for (const pr of prs ?? []) {
     items.push({
       id: `pr:${pr.repo}#${pr.number}`,
@@ -141,7 +153,7 @@ async function loadIndex(onUpdate: (items: Item[]) => void): Promise<void> {
 }
 
 export default function CommandPalette({ open, onClose, onJump }: { open: boolean; onClose: () => void; onJump: (target: JumpTarget) => void }) {
-  const [items, setItems] = useState<Item[]>(cachedIndex);
+  const [items, setItems] = useState<Item[]>(cachedIndex.length ? cachedIndex : ACTIONS);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
