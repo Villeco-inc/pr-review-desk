@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import Icon, { type IconName } from "./ui/Icon";
 import Avatar from "./ui/Avatar";
 import { useQuery } from "../hooks/useApi";
+import { useRepos } from "../hooks/useRepos";
 import { JUMP_KEY_LABEL, isMac } from "./CommandPalette";
 import { Segmented } from "./ui/Field";
 import { SETTINGS_SHOW_SYSTEM_SWITCH, useSystem, type System, type Theme } from "./SystemProvider";
@@ -73,6 +74,7 @@ interface AppShellProps {
   children: ReactNode;
   onNavigate: (section: BuiltSection) => void;
   onJump: () => void;
+  onPickRepos: () => void;
 }
 
 const SECTIONS: { id: Section; label: string; icon: IconName; built: boolean }[] = [
@@ -80,11 +82,11 @@ const SECTIONS: { id: Section; label: string; icon: IconName; built: boolean }[]
   { id: "local", label: "Local branches", icon: "branch", built: true },
   { id: "compare", label: "Compare", icon: "compare", built: true },
   { id: "activity", label: "Activity", icon: "gauge", built: true },
-  { id: "repos", label: "Repositories", icon: "repo", built: false },
+  { id: "repos", label: "Repositories", icon: "repo", built: true },
   { id: "settings", label: "Settings", icon: "settings", built: false },
 ];
 
-export default function AppShell({ section, crumbs, actions, children, onNavigate, onJump }: AppShellProps) {
+export default function AppShell({ section, crumbs, actions, children, onNavigate, onJump, onPickRepos }: AppShellProps) {
   const [actionsEl, setActionsEl] = useState<HTMLElement | null>(null);
   const [counts, setCounts] = useState<Partial<Record<Section, number>>>({});
   const setCount = useCallback(
@@ -96,7 +98,7 @@ export default function AppShell({ section, crumbs, actions, children, onNavigat
   return (
     <ShellContext.Provider value={ctx}>
       <div className="flex h-screen overflow-hidden bg-page text-fg">
-        <Rail section={section} counts={counts} onNavigate={onNavigate} onJump={onJump} />
+        <Rail section={section} counts={counts} onNavigate={onNavigate} onJump={onJump} onPickRepos={onPickRepos} />
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-[54px] shrink-0 items-center gap-4 edge-b bg-page px-6">
             {crumbs}
@@ -116,14 +118,16 @@ function Rail({
   counts,
   onNavigate,
   onJump,
+  onPickRepos,
 }: {
   section: Section;
   counts: Partial<Record<Section, number>>;
   onNavigate: (section: BuiltSection) => void;
   onJump: () => void;
+  onPickRepos: () => void;
 }) {
   const { data: viewer } = useQuery<{ login: string }>("/api/viewer", [], 5 * 60_000);
-  const { data: repos } = useQuery<string[]>("/api/repos");
+  const { data: repos } = useRepos();
   const org = repos?.[0]?.split("/")[0];
 
   return (
@@ -161,7 +165,7 @@ function Rail({
                   aria-current={active ? "page" : undefined}
                   aria-disabled={s.built ? undefined : "true"}
                   title={s.built ? undefined : "Not built yet"}
-                  onClick={s.built ? () => onNavigate(s.id as BuiltSection) : undefined}
+                  onClick={!s.built ? undefined : s.id === "repos" ? onPickRepos : () => onNavigate(s.id as BuiltSection)}
                   className={`flex h-10 w-full items-center gap-2.5 edge px-2.5 text-left label-caps focus-ring ${
                     active
                       ? "border-acid bg-acid text-acid-fg"

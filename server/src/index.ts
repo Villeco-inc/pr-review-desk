@@ -60,6 +60,6 @@ if (process.env.NODE_ENV === "production") {
 
 app.listen(port, () => {
   console.log(`pr-review-desk server listening on http://localhost:${port}`);
-  console.log(`repos: ${configuredRepos().join(", ") || "(none)"}`);
+  console.log(`repos: ${configuredRepos().join(", ") || "(none yet, pick them in the app)"}`);
   console.log(`local repos: ${configuredLocalRepos().map((r) => r.label).join(", ") || "(none)"}`);
 });

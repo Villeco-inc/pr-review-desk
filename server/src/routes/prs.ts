@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
-import { listPullRequests, listOrgPullRequests, fetchPrSnapshot, getViewer } from "../services/github";
+import { listPullRequests, listOrgPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } from "../services/github";
+import { saveSelectedRepos, selectedRepos } from "../services/repo-selection";
 import { reviewId } from "../services/review-engine";
 import { discoveredRepos } from "../services/repo-discovery";
 import { checkoutsRoot } from "../services/local-git";
@@ -8,16 +9,16 @@ import type { FindingRow, MyReviewState, PullRequest, PullRequestDto, ReviewRow 
 
 export const prsRouter = Router();
 
-/** REPOS first, then the GitHub repo of every checkout found under SCAN_DIR. */
+/**
+ * The GitHub repos the PR list and Compare offer: the pick saved in the app. Until one is saved,
+ * REPOS plus the GitHub repo of every checkout found under SCAN_DIR stand in for it.
+ */
 export function configuredRepos(): string[] {
-  const explicit = (process.env.REPOS ?? "")
-    .split(",")
-    .map((r) => r.trim())
-    .filter(Boolean);
   const found = discoveredRepos(checkoutsRoot())
     .map((r) => r.ghRepo)
     .filter((r): r is string => !!r);
-  return [...new Set([...explicit, ...found])];
+  const startingPick = [...new Set([...(process.env.REPOS ?? "").split(","), ...found].map((r) => r.trim()).filter(Boolean))];
+  return selectedRepos(getDb(), startingPick.join(","));
 }
 
 function reviewStatusFor(repo: string, number: number): ReviewRow | undefined {
@@ -42,6 +43,28 @@ function myReviewFor(pr: PullRequest, viewer: string | null): MyReviewState | nu
 
 prsRouter.get("/repos", (_req, res) => {
   res.json(configuredRepos());
+});
+
+prsRouter.put("/repos", (req, res) => {
+  const { repos } = req.body as { repos?: unknown };
+  if (!Array.isArray(repos) || !repos.every((r) => typeof r === "string")) {
+    res.status(400).json({ error: "repos must be a list of owner/name" });
+    return;
+  }
+  try {
+    saveSelectedRepos(getDb(), repos);
+    res.json(configuredRepos());
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+prsRouter.get("/repos/available", async (_req, res) => {
+  try {
+    res.json(await listAccessibleRepos());
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 prsRouter.get("/viewer", async (_req, res) => {

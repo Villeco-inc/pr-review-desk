@@ -6,39 +6,41 @@ It lists the open pull requests of your GitHub repositories, runs a Claude Code 
 
 ## What you need
 
-- **Docker** with Compose v2 (Docker Desktop is enough).
-- **The GitHub CLI**, logged in: `gh auth login`. Only used once, to get a token.
-- **Claude Code**, logged in: `claude`. Only used once, to get a token.
+On a Mac: **Docker Desktop**, running, plus a **GitHub** account and a **Claude** plan. `./start.sh` installs the rest when you say yes.
 
-The app runs in a container that cannot see the logins on your machine. It only sees the two tokens you put in `.env`.
+On Linux: Docker with Compose v2, plus `gh` and `claude` installed by hand (see [Linux](#linux)).
 
 ## Install
 
 ```bash
 git clone https://github.com/davidrlarochelle/pr-review-desk.git
 cd pr-review-desk
-cp .env.example .env
+./start.sh
 ```
 
-Fill in `.env`:
+The first run walks you through everything, and stops with the exact command to run if you answer no:
 
-| Variable | How to get it |
-| --- | --- |
-| `REPOS_ROOT` + `SCAN_DIR` | The folder holding your checkouts: every repo cloned there is picked up, see [Which repositories](#which-repositories) |
-| `GH_TOKEN` | `gh auth token` |
-| `CLAUDE_CODE_OAUTH_TOKEN` | `claude setup-token` (a long-lived token, made for headless use) |
+1. Checks that Docker is installed and running, and that the app's port (37703 unless `HOST_PORT` says otherwise) is free. Restarting this same install is fine: its own container may hold the port.
+2. Installs the GitHub CLI (`gh`) if it is missing: with Homebrew when you have it, otherwise the official release from GitHub, checked against its checksum and put in `~/.local/bin`.
+3. Logs you in to GitHub (`gh auth login`, in your browser) if you are not logged in yet.
+4. Installs Claude Code (`claude`) with its official installer if it is missing, runs `claude setup-token` and asks you to paste the token. It is saved in `.env`, and nothing else is written there.
+5. Builds and starts the app, and prints its address: **http://localhost:37703**.
 
-Then:
+On the first visit, the app asks which repositories to follow, among every repository your GitHub account can see. Change them later from **Repositories** in the left rail, or `⌘K` → *Pick repositories*.
+
+The GitHub token is read from `gh` at every start and handed to the container. It is never written to a file. To use another account gh is logged in to: `./start.sh --user <login>`.
+
+### Linux
+
+`./start.sh` checks the same things but does not install anything. Install the two tools first, then run it:
 
 ```bash
-docker compose up -d --build
+# GitHub CLI: https://github.com/cli/cli/blob/trunk/docs/install_linux.md
+curl -fsSL https://claude.ai/install.sh | bash    # Claude Code
+./start.sh
 ```
 
-Open **http://localhost:37703**.
-
-If a required value is missing, `docker compose up` stops and names it, instead of starting an app that cannot work.
-
-## Which repositories
+## Which repositories (optional)
 
 Point the app at the folder where your checkouts live. Docker mounts it read-only at `/repos`.
 
@@ -47,9 +49,9 @@ REPOS_ROOT=/Users/me/code    # absolute path, defaults to ~/Documents
 SCAN_DIR=my-org              # relative to REPOS_ROOT: /Users/me/code/my-org/<each repo>
 ```
 
-Every subfolder of `SCAN_DIR` with a `.git` becomes a local repo, named after its folder, and the GitHub repo of its `origin` remote joins the pull request list. The folder is read again every 30 seconds: clone a repo there and it appears, no restart. Hidden folders, worktrees and folders without a GitHub `origin` are left out of the PR list.
+Every subfolder of `SCAN_DIR` with a `.git` becomes a local repo, named after its folder, in **Local branches**. The folder is read again every 30 seconds: clone a repo there and it appears, no restart. Until you pick repositories in the app, the GitHub repo of each one's `origin` also joins the PR list. Hidden folders, worktrees and folders without a GitHub `origin` are left out of it.
 
-For anything outside that folder, add it by hand: `REPOS=owner/name,…` for GitHub repos, `LOCAL_REPOS=label=relative/path,…` for checkouts.
+For checkouts outside that folder, add them by hand: `LOCAL_REPOS=label=relative/path,…`.
 
 ### Reviewing local branches
 
@@ -59,16 +61,14 @@ The review compares **commits**: `base...branch` in that checkout. Work that is 
 
 | Variable | Required | Default | What it does |
 | --- | --- | --- | --- |
-| `GH_TOKEN` | yes | — | Lists PRs and posts comments **as you** |
-| `CLAUDE_CODE_OAUTH_TOKEN` | yes | — | Runs `claude -p` inside the container |
+| `CLAUDE_CODE_OAUTH_TOKEN` | yes | — | Runs `claude -p` inside the container. Written by `./start.sh` |
+| `REPOS` | no | none | Starting pick of repositories for an existing install, until you pick them in the app |
+| `GH_TOKEN` | no | from `gh` | Lists PRs and posts comments **as you**. `./start.sh` sets it; only needed in `.env` to start with `docker compose up` directly |
 | `REPOS_ROOT` | no | `~/Documents` | Folder with your local checkouts |
-| `SCAN_DIR` | no* | none | Folder of checkouts, relative to `REPOS_ROOT`, scanned for repos |
-| `REPOS` | no* | none | Extra GitHub repositories, `owner/name,…` |
+| `SCAN_DIR` | no | none | Folder of checkouts, relative to `REPOS_ROOT`, scanned for repos |
 | `LOCAL_REPOS` | no | none | Extra local checkouts, `label=relative/path,…` |
 | `HOST_PORT` | no | `37703` | Port the app is served on |
 | `PORT` | no | `3100` | Port of the server in dev mode |
-
-\* At least one of `SCAN_DIR` or `REPOS`, or the PR list is empty.
 
 ## Using it
 
@@ -83,7 +83,7 @@ The review compares **commits**: `base...branch` in that checkout. Work that is 
 
 | Where | Keys |
 | --- | --- |
-| Anywhere | `⌘K` / `Ctrl+K` jump to a PR, branch or finding |
+| Anywhere | `⌘K` / `Ctrl+K` jump to a PR, branch or finding, or pick repositories |
 | PR list, local branches | `J` / `K` move, `Enter` open, `R` start a review |
 | PR detail | `X` select the focused finding, `P` post the selection, `Esc` back |
 | Finding | `J` / `K` next / previous finding, `Esc` back |
@@ -100,7 +100,7 @@ Every review runs on **your** Claude plan. For reference, reviews of real PRs wi
 
 Everything lives in `./data`, next to the code, and survives rebuilds:
 
-- `data/reviews.db` — SQLite: reviews, findings, cached PR lists, runs.
+- `data/reviews.db` — SQLite: reviews, findings, cached PR lists, runs, the repositories you follow.
 - `data/runs/<run id>/` — for each run: `prompt.txt`, `stream.jsonl` (the raw events), `stderr.log`.
 
 To start from scratch: `docker compose down`, delete `data/`, start again.
@@ -109,7 +109,7 @@ To start from scratch: `docker compose down`, delete `data/`, start again.
 
 ```bash
 git pull
-docker compose up -d --build
+./start.sh
 ```
 
 Nothing to migrate by hand: the database schema is completed at startup.
@@ -117,20 +117,22 @@ Nothing to migrate by hand: the database schema is completed at startup.
 ## Security
 
 - The app is served on `127.0.0.1` only. It holds your GitHub token and posts comments in your name, so it must not be reachable from the network.
-- `.env` holds your tokens and is git-ignored. Never commit it.
+- `.env` holds your Claude token and is git-ignored. Never commit it. It is not copied into the Docker image.
 - Local checkouts are mounted read-only.
+- The server answers only requests addressed to `localhost`, and refuses changes sent by any other website open in your browser.
 
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `docker compose up` stops with `GH_TOKEN is not set in .env` (or another variable) | Fill it in `.env`, see [Install](#install) |
-| A repository is missing from the lists | Its checkout is not directly under `SCAN_DIR`, or its `origin` is not on GitHub. The server log lists what it found at startup: `docker compose logs app \| grep repos` |
-| PR list says *GitHub is not authenticated* | `GH_TOKEN` is empty, wrong or expired. Run `gh auth token`, update `.env`, then `docker compose up -d` |
-| A review fails right away | Open its **Session**: the stderr panel shows the Claude error. Usually `CLAUDE_CODE_OAUTH_TOKEN` is missing or expired; run `claude setup-token` again |
-| Local branches list is empty | `SCAN_DIR` and `LOCAL_REPOS` are empty, or their paths are wrong relative to `REPOS_ROOT` |
+| `docker compose up` stops with `CLAUDE_CODE_OAUTH_TOKEN is not set in .env` | Start with `./start.sh`: it asks for the token |
+| `./start.sh` stops | It prints why and the command to run. Fix that, then run `./start.sh` again |
+| PR list says *GitHub is not authenticated* | The token is missing or expired. Run `./start.sh` again: it reads a fresh token from `gh`, and logs you in if needed |
+| The PR list is missing a repository | Add it from **Repositories** in the left rail |
+| A review fails right away | Open its **Session**: the stderr panel shows the Claude error. Usually `CLAUDE_CODE_OAUTH_TOKEN` is missing or expired: delete its line in `.env`, then run `./start.sh` |
+| Local branches list is empty | `SCAN_DIR` and `LOCAL_REPOS` are empty, or its paths are wrong relative to `REPOS_ROOT` |
 | A local review finds nothing | The branch has no commits beyond its base. Commit the work first (see [Reviewing local branches](#reviewing-local-branches)) |
-| Port 37703 is taken | Set `HOST_PORT` in `.env` |
+| `./start.sh` says the port is already in use | Another app holds it, often a second install of pr-review-desk. Add the `HOST_PORT=…` it suggests to `.env`, then run `./start.sh` again |
 
 Logs: `docker compose logs -f app`.
 
@@ -140,12 +142,11 @@ Needs Node 22.9 or later (`.nvmrc`), plus `gh` and `claude` installed on your ma
 
 ```bash
 npm install
-cp .env.example .env    # same file as for Docker
 npm run dev             # server on :3100, client on http://localhost:5173
 npm test
 ```
 
-In dev mode the server reads `.env` itself and uses your checkouts in place, from `REPOS_ROOT`. It uses the same `./data` folder as the container, so stop one before starting the other.
+In dev mode the server calls your own `gh` and `claude`, so their logins are used; it reads `.env` (if any) for the optional settings and uses your checkouts in place, from `REPOS_ROOT`. It uses the same `./data` folder as the container, so stop one before starting the other.
 
 ### How it is built
 

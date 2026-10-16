@@ -6,7 +6,7 @@ const DB_PATH = path.join(process.cwd(), "data", "reviews.db");
 
 let instance: Database.Database | null = null;
 
-function migrate(database: Database.Database): void {
+export function migrate(database: Database.Database): void {
   database.pragma("journal_mode = WAL");
   database.pragma("foreign_keys = ON");
 
@@ -80,6 +80,11 @@ function migrate(database: Database.Database): void {
       repo TEXT PRIMARY KEY,
       prs TEXT NOT NULL,
       fetched_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
     );
   `);
 }
