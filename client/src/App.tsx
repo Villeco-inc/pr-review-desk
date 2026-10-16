@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { Outlet, useMatches } from "@tanstack/react-router";
+import { Outlet, useLocation, useMatches } from "@tanstack/react-router";
 import AppShell, { Crumbs, type CrumbItem, type Section } from "./components/AppShell";
 import { ToastProvider } from "./components/ui/Toast";
 import CommandPalette, { type JumpTarget } from "./components/CommandPalette";
 import RepoPicker from "./components/RepoPicker";
 import { useRepos } from "./hooks/useRepos";
 import { useGo } from "./nav";
-import { reviewRepoFromSegment } from "./lib/url-state";
+import { compareRepoFromSegment, reviewRepoFromSegment } from "./lib/url-state";
+import { trackScreen } from "./lib/telemetry";
+import { useReviewNotifications } from "./hooks/useReviewNotifications";
 
 /** The root layout: rail, crumb bar and palette around whichever route is active. */
 export default function App() {
@@ -19,7 +21,13 @@ export default function App() {
   const leaf = useMatches({ select: (matches) => matches[matches.length - 1] });
   const routeId: string = leaf?.routeId ?? "";
   const params = (leaf?.params ?? {}) as Record<string, string | undefined>;
-  const search = (leaf?.search ?? {}) as { branch?: string; base?: string };
+  const search = (leaf?.search ?? {}) as { branch?: string; base?: string; head?: string };
+  const location = useLocation();
+  useReviewNotifications();
+
+  useEffect(() => {
+    trackScreen(location.pathname, location.searchStr, routeId);
+  }, [location.pathname, location.searchStr, routeId]);
 
   // ⌘K / Ctrl+K works everywhere, including inside fields, like every other jump-to palette.
   useEffect(() => {
@@ -43,11 +51,27 @@ export default function App() {
   };
 
   // The section is derived from the path prefix — never stored separately.
-  const section: Section = routeId.startsWith("/local") ? "local" : "prs";
+  const section: Section = routeId.startsWith("/local")
+    ? "local"
+    : routeId.startsWith("/compare")
+      ? "compare"
+      : routeId.startsWith("/activity")
+        ? "activity"
+        : "prs";
 
   const crumbs: CrumbItem[] = [];
   if (section === "prs") crumbs.push({ label: "Pull requests", onClick: go.prList });
-  else crumbs.push({ label: "Local branches", onClick: go.localList });
+  else if (section === "local") crumbs.push({ label: "Local branches", onClick: go.localList });
+  else if (section === "compare") crumbs.push({ label: "Compare", onClick: go.compareList });
+  else crumbs.push({ label: "Activity", onClick: () => go.activity() });
+  if (section === "compare" && params.owner && params.repo) {
+    const ghRepo = `${params.owner}/${params.repo}`;
+    crumbs.push({ label: params.repo, mono: true, onClick: () => go.compare(ghRepo, { head: search.head, base: search.base }) });
+    if (params.reviewRepo) {
+      const ref = { repo: compareRepoFromSegment(params.reviewRepo), number: Number(params.number), ghRepo, base: search.base ?? "", head: search.head ?? "" };
+      crumbs.push({ label: `${ref.head || "head"} vs ${ref.base || "base"}`, mono: true, onClick: () => go.compareReview(ref) });
+    }
+  }
   if (routeId.startsWith("/prs/$owner") && params.owner && params.repo) {
     const repo = `${params.owner}/${params.repo}`;
     const number = Number(params.number);
@@ -71,7 +95,7 @@ export default function App() {
       <AppShell
         section={section}
         crumbs={<Crumbs items={crumbs} />}
-        onNavigate={(s) => (s === "local" ? go.localList() : go.prList())}
+        onNavigate={(s) => (s === "local" ? go.localList() : s === "compare" ? go.compareList() : s === "activity" ? go.activity() : go.prList())}
         onJump={() => setPaletteOpen(true)}
         onPickRepos={() => setPickerOpen(true)}
       >

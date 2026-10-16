@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useMutation, useQuery } from "../hooks/useApi";
-import type { LocalReviewDto, ReviewDto } from "../../../shared/types";
+import type { LocalDiffSummaryDto, LocalReviewDto, ReviewDto } from "../../../shared/types";
 import StatusBadge from "./StatusBadge";
 import Button from "./ui/Button";
 import Card, { Eyebrow } from "./ui/Card";
@@ -122,7 +122,15 @@ export default function LocalBranches({
 
   const startReview = useMutation<{ repo: string; number: number }>("/api/local/reviews", "POST");
   const isRunning = latest?.status === "running" || latest?.status === "queued";
-  const canStart = !!branch && !!base && branch !== base && !isRunning && !startReview.loading;
+  const { data: summary, loading: summaryLoading } = useQuery<LocalDiffSummaryDto>(
+    repo && branch && base && branch !== base
+      ? `/api/local/diff-summary?repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(branch)}&base=${encodeURIComponent(base)}`
+      : null,
+    [repo, branch, base],
+    5_000
+  );
+  const nothingToReview = !!summary && summary.files === 0;
+  const canStart = !!branch && !!base && branch !== base && !isRunning && !startReview.loading && !nothingToReview;
 
   const handleStart = async () => {
     const skills = skillsInput.split(",").map((s) => s.trim()).filter(Boolean);
@@ -213,10 +221,10 @@ export default function LocalBranches({
             <option value="fable">Fable</option>
           </Select>
           <Select id="local-effort" icon="gauge" label="Effort" wrapperClassName="w-[248px]" value={effort} onChange={(e) => setEffort(e.target.value)} disabled={isRunning}>
-            <option value="quick">Quick · 1 turn</option>
-            <option value="standard">Standard · 3 turns</option>
-            <option value="thorough">Thorough · 10 turns</option>
-            <option value="exhaustive">Exhaustive · 25 turns</option>
+            <option value="quick">Quick · low effort</option>
+            <option value="standard">Standard · medium effort</option>
+            <option value="thorough">Thorough · high effort</option>
+            <option value="exhaustive">Exhaustive · max effort</option>
           </Select>
           <Input
             id="local-skills"
@@ -233,6 +241,37 @@ export default function LocalBranches({
           </Button>
           {latest && <StatusBadge status={latest.status} />}
         </div>
+
+        {summary && branch !== base && (
+          <div className={`flex items-center gap-2 edge-t px-5 py-3 text-xs ${nothingToReview ? "bg-danger-soft text-fg" : "text-fg-2"}`}>
+            <Icon name={nothingToReview ? "alert" : "file"} className={`size-3.5 ${nothingToReview ? "text-danger-ink" : "text-fg-3"}`} />
+            {nothingToReview ? (
+              <span>
+                Nothing to review: <span className="font-mono">{branch}</span> has no commits of its own beyond{" "}
+                <span className="font-mono">{summary.baseRef}</span>
+                {summary.worktree ? " and no uncommitted changes." : ", and it is not checked out in a worktree the app can read."}
+              </span>
+            ) : (
+              <span>
+                Will review {summary.files} file{summary.files > 1 ? "s" : ""}:{" "}
+                {[
+                  summary.ownCommits > 0 && `${summary.ownCommits} commit${summary.ownCommits > 1 ? "s" : ""}`,
+                  summary.uncommittedFiles > 0 && `${summary.uncommittedFiles} uncommitted file${summary.uncommittedFiles > 1 ? "s" : ""}`,
+                ]
+                  .filter(Boolean)
+                  .join(" + ")}{" "}
+                vs <span className="font-mono">{summary.baseRef}</span>
+                {summary.worktree && (
+                  <>
+                    {" "}
+                    · from <span className="font-mono">{summary.worktree.split("/").slice(-2).join("/")}</span>
+                  </>
+                )}
+                {summaryLoading ? " …" : ""}
+              </span>
+            )}
+          </div>
+        )}
 
         {latest && (
           <div className="flex items-center gap-3 px-5 py-3">

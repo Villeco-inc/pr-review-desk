@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getDb } from "../db/schema";
+import { track } from "../db/telemetry";
 import type { PullRequest } from "../../../shared/types";
 
 const execFileAsync = promisify(execFile);
@@ -14,6 +15,9 @@ function ghLog(...args: unknown[]): void {
   console.log("[github]", ...args);
 }
 
+/** The command for the log, with long values (comment bodies) shortened. */
+const ghArgsForLog = (args: string[]) => args.map((a) => (a.length > 200 ? `${a.slice(0, 200)}…` : a)).join(" ");
+
 async function runGh(args: string[]): Promise<string> {
   const label = args.slice(0, 4).join(" ");
   ghLog(`exec: gh ${label}...`);
@@ -26,12 +30,18 @@ async function runGh(args: string[]): Promise<string> {
       const { stdout } = await execFileAsync(candidate, args, EXEC_OPTS);
       resolvedGhPath = candidate;
       ghLog(`gh ${label} done (${Date.now() - start}ms, ${stdout.length} bytes)`);
+      track("gh", label, { status: "ok", durationMs: Date.now() - start, payload: { args: ghArgsForLog(args), bytes: stdout.length } });
       return stdout;
     } catch (err) {
       lastError = err;
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") {
         ghLog(`gh ${label} FAILED: ${(err as Error).message}`);
+        track("gh", label, {
+          status: "error",
+          durationMs: Date.now() - start,
+          payload: { args: ghArgsForLog(args), code: code ?? null, error: (err as Error).message.slice(0, 2000) },
+        });
         throw err;
       }
       ghLog(`${candidate}: not found`);
@@ -417,4 +427,103 @@ export function getViewer(): Promise<string> {
     });
   }
   return viewerLogin;
+}
+
+// ── Compare: a range of commits with no pull request (e.g. main vs the tag in production) ──
+
+export interface RepoRefs {
+  defaultBranch: string;
+  branches: string[];
+  /** Newest first, by version when the names are versions. */
+  tags: string[];
+  production: ProductionRef | null;
+}
+
+export interface ProductionRef {
+  tag: string;
+  /** "deployment": GitHub recorded a production deployment of this tag's commit; "latest-tag": a guess. */
+  source: "deployment" | "latest-tag";
+  deployedAt: string | null;
+}
+
+const versionKey = (tag: string) => (tag.match(/\d+/g) ?? []).map(Number);
+const byVersionDesc = (a: string, b: string) => {
+  const [x, y] = [versionKey(a), versionKey(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? -1) !== (y[i] ?? -1)) return (y[i] ?? -1) - (x[i] ?? -1);
+  return b.localeCompare(a);
+};
+
+export async function fetchRepoRefs(repo: string): Promise<RepoRefs> {
+  // --paginate with --jq prints one line per item across every page.
+  const lines = (out: string) => out.split("\n").map((l) => l.trim()).filter(Boolean);
+  const [tagLines, branchLines, repoJson, deploymentsJson] = await Promise.all([
+    runGh(["api", "--paginate", `repos/${repo}/tags?per_page=100`, "--jq", '.[] | "\\(.name) \\(.commit.sha)"']),
+    runGh(["api", "--paginate", `repos/${repo}/branches?per_page=100`, "--jq", ".[].name"]),
+    runGh(["api", `repos/${repo}`]),
+    runGh(["api", `repos/${repo}/deployments?environment=production&per_page=1`]).catch(() => "[]"),
+  ]);
+  const tagRows = lines(tagLines).map((l) => {
+    const [name, sha] = l.split(" ");
+    return { name, commit: { sha } };
+  });
+  const tags = tagRows.map((t) => t.name).sort(byVersionDesc);
+  const branches = lines(branchLines);
+  const defaultBranch = (JSON.parse(repoJson) as { default_branch?: string }).default_branch ?? "main";
+
+  // The production deploy is dispatched with a tag, but GitHub records the commit: find the tag on it.
+  const deployment = (JSON.parse(deploymentsJson) as { sha: string; created_at: string }[])[0];
+  const deployedTag = deployment && tagRows.filter((t) => t.commit.sha === deployment.sha).map((t) => t.name).sort(byVersionDesc)[0];
+  const production: ProductionRef | null = deployedTag
+    ? { tag: deployedTag, source: "deployment", deployedAt: deployment.created_at }
+    : tags[0]
+      ? { tag: tags[0], source: "latest-tag", deployedAt: null }
+      : null;
+
+  return { defaultBranch, branches, tags, production };
+}
+
+export interface CompareCommit {
+  sha: string;
+  message: string;
+  author: string;
+}
+
+// GitHub's compare endpoint stops listing at 300 files and 250 commits.
+const COMPARE_FILE_LIMIT = 300;
+const COMPARE_COMMIT_LIMIT = 250;
+
+export interface CompareResult {
+  /** GitHub cut the file or commit list: a review would silently miss changes. */
+  truncated: boolean;
+  aheadBy: number;
+  behindBy: number;
+  commits: CompareCommit[];
+  files: { path: string; additions: number; deletions: number }[];
+}
+
+const compareRange = (base: string, head: string) => `${encodeURIComponent(base)}...${encodeURIComponent(head)}`;
+
+export async function fetchCompare(repo: string, base: string, head: string): Promise<CompareResult> {
+  const json = JSON.parse(await runGh(["api", `repos/${repo}/compare/${compareRange(base, head)}`])) as {
+    ahead_by: number;
+    behind_by: number;
+    commits: { sha: string; commit: { message: string; author?: { name?: string } }; author?: { login?: string } | null }[];
+    files?: { filename: string; additions: number; deletions: number }[];
+  };
+  const fileCount = json.files?.length ?? 0;
+  return {
+    truncated: fileCount >= COMPARE_FILE_LIMIT || json.ahead_by > COMPARE_COMMIT_LIMIT,
+    aheadBy: json.ahead_by,
+    behindBy: json.behind_by,
+    commits: json.commits.map((c) => ({
+      sha: c.sha,
+      message: c.commit.message,
+      author: c.author?.login ?? c.commit.author?.name ?? "",
+    })),
+    files: (json.files ?? []).map((f) => ({ path: f.filename, additions: f.additions, deletions: f.deletions })),
+  };
+}
+
+export async function fetchCompareDiff(repo: string, base: string, head: string): Promise<string> {
+  return runGh(["api", "-H", "Accept: application/vnd.github.diff", `repos/${repo}/compare/${compareRange(base, head)}`]);
 }

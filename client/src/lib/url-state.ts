@@ -124,6 +124,38 @@ export function forgetLocalRepo(label: string) {
   removeStored("local", localKey(label));
 }
 
+// ── Compare ───────────────────────────────────────────────────────────────────
+// The base is not remembered: by default it follows the tag in production, which moves on
+// every deploy. The head (usually the branch about to ship) is remembered per repo.
+
+export interface CompareSearch {
+  base?: string;
+  head?: string;
+}
+
+export const validateCompareSearch = (raw: Record<string, unknown>): CompareSearch => ({ base: str(raw.base), head: str(raw.head) });
+
+const COMPARE_LAST_REPO = "prd:compare:repo";
+const compareHeadKey = (repo: string) => `prd:compare:head:${repo}`;
+
+export function saveCompare(repo: string, head: string | undefined) {
+  writeStored("local", COMPARE_LAST_REPO, repo);
+  if (head) writeStored("local", compareHeadKey(repo), head);
+}
+
+export function rememberedCompareRepo(): string | null {
+  const repo = readStored<string>("local", COMPARE_LAST_REPO);
+  return typeof repo === "string" && repo.includes("/") ? repo : null;
+}
+
+export function loadCompareHead(repo: string): string | undefined {
+  const head = readStored<string>("local", compareHeadKey(repo));
+  return typeof head === "string" && head ? head : undefined;
+}
+
+export const compareRepoSegment = (repo: string) => repo.replace(/^compare\//, "");
+export const compareRepoFromSegment = (segment: string) => `compare/${segment}`;
+
 // ── Local review identity ─────────────────────────────────────────────────────
 // Local reviews are stored as repo `local/<label>-<hash>`; the path drops the `local/`
 // prefix so it never needs a `%2F`.

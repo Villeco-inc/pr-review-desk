@@ -16,7 +16,6 @@
   "dependencies": {
     "@tanstack/react-router": "^1.170.39",
     "better-sqlite3": "^11.7.0",
-    "cors": "^2.8.5",
     "express": "^5.1.0",
     "uuid": "^11.1.0",
     "zod": "^3.24.0"
@@ -24,7 +23,6 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
     "@types/better-sqlite3": "^7.6.12",
-    "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",

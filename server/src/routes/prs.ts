@@ -3,9 +3,23 @@ import { getDb } from "../db/schema";
 import { listPullRequests, listOrgPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } from "../services/github";
 import { saveSelectedRepos, selectedRepos } from "../services/repo-selection";
 import { reviewId } from "../services/review-engine";
+import { discoveredRepos } from "../services/repo-discovery";
+import { checkoutsRoot } from "../services/local-git";
 import type { FindingRow, MyReviewState, PullRequest, PullRequestDto, ReviewRow } from "../../../shared/types";
 
 export const prsRouter = Router();
+
+/**
+ * The GitHub repos the PR list and Compare offer: the pick saved in the app. Until one is saved,
+ * REPOS plus the GitHub repo of every checkout found under SCAN_DIR stand in for it.
+ */
+export function configuredRepos(): string[] {
+  const found = discoveredRepos(checkoutsRoot())
+    .map((r) => r.ghRepo)
+    .filter((r): r is string => !!r);
+  const startingPick = [...new Set([...(process.env.REPOS ?? "").split(","), ...found].map((r) => r.trim()).filter(Boolean))];
+  return selectedRepos(getDb(), startingPick.join(","));
+}
 
 function reviewStatusFor(repo: string, number: number): ReviewRow | undefined {
   const db = getDb();
@@ -28,7 +42,7 @@ function myReviewFor(pr: PullRequest, viewer: string | null): MyReviewState | nu
 }
 
 prsRouter.get("/repos", (_req, res) => {
-  res.json(selectedRepos(getDb(), process.env.REPOS));
+  res.json(configuredRepos());
 });
 
 prsRouter.put("/repos", (req, res) => {
@@ -39,7 +53,7 @@ prsRouter.put("/repos", (req, res) => {
   }
   try {
     saveSelectedRepos(getDb(), repos);
-    res.json(selectedRepos(getDb(), process.env.REPOS));
+    res.json(configuredRepos());
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
   }

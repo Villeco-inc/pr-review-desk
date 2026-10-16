@@ -38,7 +38,7 @@ import { focusedAttr, useHotkeys } from "../hooks/useHotkeys";
 import { LAUNCH_DEFAULTS, LAUNCH_KEY, useStoredState } from "../lib/storage";
 import { loadPrOrder } from "../lib/url-state";
 import NotFound from "./ui/NotFound";
-import { SessionButton } from "./RunSession";
+import { ReimportButton, ScopeNote, SessionButton } from "./RunSession";
 
 interface ReviewWithFindings extends ReviewDto {
   findings: FindingDto[];
@@ -276,10 +276,10 @@ export default function PRDetail({
             <option value="fable">Fable</option>
           </Select>
           <Select id="effort" icon="gauge" label="Effort" wrapperClassName="w-[248px]" value={effort} onChange={(e) => setEffort(e.target.value)} disabled={isRunning}>
-            <option value="quick">Quick · 1 turn</option>
-            <option value="standard">Standard · 3 turns</option>
-            <option value="thorough">Thorough · 10 turns</option>
-            <option value="exhaustive">Exhaustive · 25 turns</option>
+            <option value="quick">Quick · low effort</option>
+            <option value="standard">Standard · medium effort</option>
+            <option value="thorough">Thorough · high effort</option>
+            <option value="exhaustive">Exhaustive · max effort</option>
           </Select>
           <Input
             id="skills"
@@ -332,6 +332,7 @@ export default function PRDetail({
                 <pre className="max-w-[900px] whitespace-pre-wrap edge bg-surface px-2.5 py-2 font-mono text-xs leading-[18px] text-danger-ink">{review.error}</pre>
               </div>
               <div className="flex gap-2">
+                <ReimportButton repo={repo} number={number} error={review.error} onDone={refetchReview} />
                 <Button size="sm" onClick={() => navigator.clipboard?.writeText(review.error ?? "")}>
                   Copy error
                 </Button>
@@ -359,6 +360,7 @@ export default function PRDetail({
             <p className="max-w-[960px] whitespace-pre-wrap px-5 pb-4 pt-3 text-fg-2">{review.summary}</p>
           </div>
         )}
+        {review && <ScopeNote repo={repo} number={number} status={review.status} onOpen={onOpenSession} />}
       </Card>
 
       {showThread && (

@@ -7,8 +7,10 @@ import { useRepos } from "../hooks/useRepos";
 import { JUMP_KEY_LABEL, isMac } from "./CommandPalette";
 import { Segmented } from "./ui/Field";
 import { SETTINGS_SHOW_SYSTEM_SWITCH, useSystem, type System, type Theme } from "./SystemProvider";
+import { useNotificationPermission } from "../hooks/useReviewNotifications";
 
-export type Section = "prs" | "local" | "repos" | "settings";
+export type Section = "prs" | "local" | "compare" | "activity" | "repos" | "settings";
+export type BuiltSection = "prs" | "local" | "compare" | "activity";
 
 interface ShellContextValue {
   actionsEl: HTMLElement | null;
@@ -70,7 +72,7 @@ interface AppShellProps {
   crumbs: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
-  onNavigate: (section: "prs" | "local") => void;
+  onNavigate: (section: BuiltSection) => void;
   onJump: () => void;
   onPickRepos: () => void;
 }
@@ -78,6 +80,8 @@ interface AppShellProps {
 const SECTIONS: { id: Section; label: string; icon: IconName; built: boolean }[] = [
   { id: "prs", label: "Pull requests", icon: "pullRequest", built: true },
   { id: "local", label: "Local branches", icon: "branch", built: true },
+  { id: "compare", label: "Compare", icon: "compare", built: true },
+  { id: "activity", label: "Activity", icon: "gauge", built: true },
   { id: "repos", label: "Repositories", icon: "repo", built: true },
   { id: "settings", label: "Settings", icon: "settings", built: false },
 ];
@@ -118,7 +122,7 @@ function Rail({
 }: {
   section: Section;
   counts: Partial<Record<Section, number>>;
-  onNavigate: (section: "prs" | "local") => void;
+  onNavigate: (section: BuiltSection) => void;
   onJump: () => void;
   onPickRepos: () => void;
 }) {
@@ -161,7 +165,7 @@ function Rail({
                   aria-current={active ? "page" : undefined}
                   aria-disabled={s.built ? undefined : "true"}
                   title={s.built ? undefined : "Not built yet"}
-                  onClick={!s.built ? undefined : s.id === "repos" ? onPickRepos : () => onNavigate(s.id as "prs" | "local")}
+                  onClick={!s.built ? undefined : s.id === "repos" ? onPickRepos : () => onNavigate(s.id as BuiltSection)}
                   className={`flex h-10 w-full items-center gap-2.5 edge px-2.5 text-left label-caps focus-ring ${
                     active
                       ? "border-acid bg-acid text-acid-fg"
@@ -179,6 +183,7 @@ function Rail({
       </nav>
 
       <div className="mt-auto flex flex-col gap-3 edge-t border-rail-line pt-4">
+        <NotificationsButton />
         {SETTINGS_SHOW_SYSTEM_SWITCH && <SystemSwitch />}
         {/* Repo switching still lives in each list's filter bar; this is the placeholder for it. */}
         <button
@@ -220,5 +225,22 @@ function SystemSwitch() {
       <span className="mt-1.5 px-1 label-caps text-rail-fg">Mode</span>
       <Segmented block ariaLabel="Colour mode" value={theme} onChange={setTheme} options={THEMES} />
     </div>
+  );
+}
+
+/** Shown until the browser is allowed to notify: it may only ask from a click. */
+function NotificationsButton() {
+  const [permission, request] = useNotificationPermission();
+  if (permission !== "default") return null;
+  return (
+    <button
+      type="button"
+      onClick={request}
+      title="Get a system notification when a review finishes or fails"
+      className="flex h-[38px] w-full items-center gap-2 edge border-rail-line px-2.5 text-left text-rail-fg hover:border-rail-accent hover:text-rail-accent focus-ring"
+    >
+      <Icon name="bell" className="size-3.5 shrink-0" />
+      <span className="flex-1 label-caps">Enable notifications</span>
+    </button>
   );
 }

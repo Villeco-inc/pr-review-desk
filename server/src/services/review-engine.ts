@@ -1,27 +1,36 @@
 import { spawn, spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import { getDb } from "../db/schema";
 import {
   fetchPrDiff,
   fetchPrSnapshot,
   fetchExistingReviews,
+  fetchCompare,
+  fetchCompareDiff,
   type PrSnapshot,
   type ExistingReview,
   type ExistingReviewComment,
 } from "./github";
-import { parseReport } from "./findings-parser";
+import { closesString, parseReport } from "./findings-parser";
+import { scopeDiff, type DiffScope } from "./diff-scope";
+import { track } from "../db/telemetry";
 import { splitUnifiedDiff } from "./diff-utils";
 import { getLocalDiff, getLatestCommitMessage, localRepoIdentity } from "./local-git";
-import { appendStderr, appendStreamLine, createRun, finishRun, recordStats, statsFromEvent } from "./run-log";
-import type { Finding, Report, ReviewEvent } from "../../../shared/types";
+import { appendStderr, appendStreamLine, createRun, finishRun, getRunSession, recordStats, statsFromEvent } from "./run-log";
+import type { Finding, Report, ReviewEvent, ReviewOutcome, ReviewTarget } from "../../../shared/types";
 
 export const reviewEvents = new EventEmitter();
 reviewEvents.setMaxListeners(0);
 
+/** Every review that finishes or fails, whichever page started it: emitted as "outcome". */
+export const reviewOutcomes = new EventEmitter();
+reviewOutcomes.setMaxListeners(0);
+
+const reviewTargets = new Map<string, ReviewTarget>();
+
 const CLAUDE_CANDIDATES = ["claude", `${os.homedir()}/.local/bin/claude`, "/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
-const MAX_DIFF_CHARS_PER_FILE = 20_000;
 
 let resolvedClaudePath: string | null = null;
 
@@ -37,6 +46,24 @@ function emit(id: string, type: ReviewEvent["type"], data: unknown): void {
   const event: ReviewEvent = { type, reviewId: id, data };
   log("emit", `${type} for ${id}`, JSON.stringify(data).slice(0, 200));
   reviewEvents.emit(id, event);
+}
+
+function targetTitle(target: ReviewTarget | null, fallback: string): string {
+  if (target?.kind === "pr") return `${target.repo}#${target.number}`;
+  if (target?.kind === "local") return `${target.repoLabel} · ${target.branch}`;
+  if (target?.kind === "compare") return `${target.ghRepo} · ${target.head} vs ${target.base}`;
+  return fallback;
+}
+
+function announce(id: string, outcome: Pick<ReviewOutcome, "status" | "findings" | "error">): void {
+  const row = getDb().prepare("SELECT repo, number, title FROM reviews WHERE id = ?").get(id) as
+    | { repo: string; number: number; title: string }
+    | undefined;
+  // After a server restart the map is empty; only a PR review can be found again from its id.
+  const target =
+    reviewTargets.get(id) ?? (row && !/^(local|compare)\//.test(row.repo) ? { kind: "pr" as const, repo: row.repo, number: row.number } : null);
+  const title = [targetTitle(target, id), row?.title].filter(Boolean).join(" — ");
+  reviewOutcomes.emit("outcome", { reviewId: id, title, target, ...outcome } satisfies ReviewOutcome);
 }
 
 function resolveClaudePath(): string {
@@ -80,17 +107,6 @@ const FINDINGS_SCHEMA_TEXT = `{
   ]
 }`;
 
-function truncateDiff(diff: string): string {
-  const files = splitUnifiedDiff(diff);
-  if (files.length === 0) return diff;
-
-  return files
-    .map((f) =>
-      f.patch.length > MAX_DIFF_CHARS_PER_FILE ? `${f.patch.slice(0, MAX_DIFF_CHARS_PER_FILE)}\n... [truncated]` : f.patch
-    )
-    .join("\n");
-}
-
 interface ExistingReviewContext {
   reviews: ExistingReview[];
   comments: ExistingReviewComment[];
@@ -124,10 +140,24 @@ ${[...reviewBlocks, ...commentBlocks].join("\n\n")}
 interface PromptOptions {
   skills: string[];
   existing?: ExistingReviewContext;
+  scope: DiffScope;
+}
+
+function formatNotShown(scope: DiffScope): string {
+  if (scope.omitted.length === 0 && scope.truncated.length === 0) return "";
+  const lines = [
+    ...scope.omitted.map((f) => `- ${f.path} : omis (${f.reason})`),
+    ...scope.truncated.map((f) => `- ${f.path} : coupé, seuls les ${f.keptChars} premiers caractères sur ${f.chars} sont montrés`),
+  ];
+  return `
+## Fichiers absents ou incomplets dans le diff
+Ces fichiers font partie du changement mais ne sont pas montrés en entier. Ne rapporte rien sur ce que tu n'as pas vu ; signale dans le summary si leur absence t'empêche de conclure.
+${lines.join("\n")}
+`;
 }
 
 function buildPrompt(subjectLine: string, snapshot: PrSnapshot, diff: string, options: PromptOptions): string {
-  const { skills, existing } = options;
+  const { skills, existing, scope } = options;
   const fileList = (snapshot.files ?? [])
     .map((f) => {
       const file = f as { path?: string; additions?: number; deletions?: number };
@@ -153,8 +183,8 @@ ${snapshot.body || "(no description)"}
 ${fileList}
 
 ## Diff
-${truncateDiff(diff)}
-${existingSection}
+${scope.text}
+${formatNotShown(scope)}${existingSection}
 ## Instructions
 ${instructions}
 
@@ -177,6 +207,7 @@ ${FINDINGS_SCHEMA_TEXT}
 \`suggestedComment\` est posté tel quel sur GitHub comme commentaire de review adressé à l'auteur de la PR — rédige-le en français, même style ELI5, court et concret.
 Chaque path doit être le chemin complet relatif à la racine du repo.
 Si tu ne trouves rien, output {"summary": "...", "findings": []}.
+Dans les valeurs texte du JSON, n'écris jamais de guillemet droit " : pour citer un mot ou une valeur, utilise « » ou des apostrophes '. Un " non échappé casse le JSON et fait échouer toute la review.
 
 Ne poste RIEN sur GitHub. Ne modifie AUCUN fichier.`;
 }
@@ -195,7 +226,7 @@ function extractJsonBlock(text: string): string | null {
     if (inString) {
       if (escape) escape = false;
       else if (ch === "\\") escape = true;
-      else if (ch === '"') inString = false;
+      else if (ch === '"' && closesString(text, i)) inString = false;
       continue;
     }
     if (ch === '"') {
@@ -278,12 +309,12 @@ export function getThreadLog(id: string): string[] {
   return threadLogs.get(id) ?? [];
 }
 
-function runClaude(id: string, runId: string, prompt: string, model?: string, maxTurns?: number): Promise<string> {
+function runClaude(id: string, runId: string, prompt: string, model: string | undefined, effortLevel: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const claudePath = resolveClaudePath();
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--tools", ""];
     if (model) args.push("--model", model);
-    if (maxTurns) args.push("--max-turns", String(maxTurns));
+    args.push("--effort", effortLevel);
     log(id, `spawning: ${claudePath} ${args.join(" ")} (prompt via stdin: ${prompt.length} chars)`);
 
     const child = spawn(claudePath, args, {
@@ -294,6 +325,8 @@ function runClaude(id: string, runId: string, prompt: string, model?: string, ma
     child.stdin.end();
 
     log(id, `claude process started, pid=${child.pid}, prompt written to stdin`);
+    const startedAt = Date.now();
+    track("claude", "spawn", { reviewId: id, runId, payload: { args: args.join(" "), promptChars: prompt.length, pid: child.pid ?? null } });
 
     let buffer = "";
     let textOut = "";
@@ -339,6 +372,13 @@ function runClaude(id: string, runId: string, prompt: string, model?: string, ma
 
     child.on("close", (code, signal) => {
       log(id, `claude process exited: code=${code} signal=${signal} lines=${lineCount} textOut=${textOut.length} chars`);
+      track("claude", "exit", {
+        reviewId: id,
+        runId,
+        status: code === 0 ? "ok" : "error",
+        durationMs: Date.now() - startedAt,
+        payload: { code, signal, streamLines: lineCount, outputChars: textOut.length, stderrChars: stderrOut.length },
+      });
       if (buffer.trim()) {
         lineCount++;
         keep(buffer.trim());
@@ -414,13 +454,15 @@ function failReview(id: string, message: string): void {
     id
   );
   emit(id, "status", { status: "failed", error: message });
+  announce(id, { status: "failed", error: message });
 }
 
-const EFFORT_MAX_TURNS: Record<string, number> = {
-  quick: 1,
-  standard: 3,
-  thorough: 10,
-  exhaustive: 25,
+// With no tools the agent always answers in one turn, so effort sets how hard it thinks (claude --effort).
+const EFFORT_LEVEL: Record<string, string> = {
+  quick: "low",
+  standard: "medium",
+  thorough: "high",
+  exhaustive: "max",
 };
 
 interface RunOptions {
@@ -444,27 +486,54 @@ async function runReview(id: string, repo: string, number: number, subjectLine: 
     }
   }
 
-  log(id, `building prompt (diff: ${diff.length} chars, files: ${(snapshot.files ?? []).length}, challenge=${challengeExisting})`);
-  const prompt = buildPrompt(subjectLine, snapshot, diff, { skills, existing });
+  const scope = scopeDiff(diff);
+  log(id, `building prompt (diff: ${diff.length} chars, sent ${scope.sentFiles} files, omitted ${scope.omitted.length}, truncated ${scope.truncated.length}, challenge=${challengeExisting})`);
+  const prompt = buildPrompt(subjectLine, snapshot, diff, { skills, existing, scope });
   log(id, `prompt built: ${prompt.length} chars`);
 
-  const maxTurns = EFFORT_MAX_TURNS[effort ?? "standard"] ?? 3;
-  const runId = createRun(id, prompt, { model, effort, maxTurns, skills });
+  const effortLevel = EFFORT_LEVEL[effort ?? "standard"] ?? "medium";
+  const runId = createRun(id, prompt, { model, effort, effortLevel, skills, scope });
+  track("review", "run.started", {
+    reviewId: id,
+    runId,
+    repo,
+    payload: {
+      model: model ?? null,
+      effort: effort ?? null,
+      effortLevel,
+      skills,
+      diffChars: diff.length,
+      promptChars: prompt.length,
+      sentFiles: scope.sentFiles,
+      omitted: scope.omitted,
+      truncated: scope.truncated,
+      challengeExisting,
+      existingReviews: existing ? existing.reviews.length + existing.comments.length : 0,
+    },
+  });
+  const startedAt = Date.now();
   try {
-    await runAgent(id, runId, prompt, model, effort, maxTurns);
+    await runAgent(id, runId, prompt, model, effortLevel);
     finishRun(runId, "reported");
+    track("review", "run.reported", { reviewId: id, runId, repo, status: "ok", durationMs: Date.now() - startedAt, payload: runNumbers(runId) });
   } catch (err) {
-    finishRun(runId, "failed", err instanceof Error ? err.message : String(err));
+    const message = err instanceof Error ? err.message : String(err);
+    finishRun(runId, "failed", message);
+    track("review", "run.failed", { reviewId: id, runId, repo, status: "error", durationMs: Date.now() - startedAt, payload: { error: message.slice(0, 2000), ...runNumbers(runId) } });
     throw err;
   }
 }
 
-async function runAgent(id: string, runId: string, prompt: string, model: string | undefined, effort: string | undefined, maxTurns: number): Promise<void> {
-  log(id, `starting claude subprocess (run ${runId})...${model ? ` model=${model}` : " (default model)"} effort=${effort ?? "standard"} maxTurns=${maxTurns}`);
+async function runAgent(id: string, runId: string, prompt: string, model: string | undefined, effortLevel: string): Promise<void> {
+  log(id, `starting claude subprocess (run ${runId})...${model ? ` model=${model}` : " (default model)"} effort=${effortLevel}`);
   threadLogs.delete(id);
-  const assistantText = await runClaude(id, runId, prompt, model, maxTurns);
+  const assistantText = await runClaude(id, runId, prompt, model, effortLevel);
   log(id, `claude finished, output: ${assistantText.length} chars`);
+  importReport(id, assistantText);
+}
 
+/** Turns the agent's final text into findings and marks the review reported. Throws when there is no usable report. */
+function importReport(id: string, assistantText: string): void {
   log(id, "extracting JSON block from output...");
   const jsonBlock = extractJsonBlock(assistantText);
   if (!jsonBlock) {
@@ -481,6 +550,15 @@ async function runAgent(id: string, runId: string, prompt: string, model: string
   }
 
   log(id, `parsed: ${result.report.findings.length} findings, ${result.warnings.length} warnings`);
+  track("review", "report.parsed", {
+    reviewId: id,
+    payload: {
+      findings: result.report.findings.length,
+      bySeverity: result.report.findings.reduce<Record<string, number>>((acc, f) => ({ ...acc, [f.severity]: (acc[f.severity] ?? 0) + 1 }), {}),
+      warnings: result.warnings.map((w) => w.reason),
+      reportChars: jsonBlock.length,
+    },
+  });
   for (const w of result.warnings) {
     log(id, `  warning: finding ${w.index}: ${w.reason}`);
   }
@@ -500,6 +578,7 @@ async function runAgent(id: string, runId: string, prompt: string, model: string
   );
   log(id, `REVIEW COMPLETED: ${result.report.findings.length} findings, summary: ${result.report.summary.slice(0, 200)}`);
   emit(id, "status", { status: "reported" });
+  announce(id, { status: "reported", findings: result.report.findings.length });
 }
 
 export async function startReview(
@@ -515,6 +594,7 @@ export async function startReview(
   const now = new Date().toISOString();
 
   log(id, `=== STARTING REVIEW === repo=${repo} number=${number} skills=[${skills.join(",")}]`);
+  track("review", "requested", { reviewId: id, repo, payload: { source: "pr", number, model: model ?? null, effort: effort ?? null, skills, challengeExisting } });
 
   log(id, "fetching PR diff and snapshot from GitHub...");
   const [diff, snapshot] = await Promise.all([fetchPrDiff(repo, number), fetchPrSnapshot(repo, number)]);
@@ -540,6 +620,7 @@ export async function startReview(
   });
   log(id, "review saved with status=running");
 
+  reviewTargets.set(id, { kind: "pr", repo, number });
   emit(id, "status", { status: "running" });
 
   log(id, `launching review in background...${model ? ` model=${model}` : ""} effort=${effort ?? "standard"} challenge=${challengeExisting}`);
@@ -566,16 +647,27 @@ export async function startLocalReview(
   const now = new Date().toISOString();
 
   log(id, `=== STARTING LOCAL REVIEW === repo=${repoLabel} branch=${branch} base=${base}`);
+  track("review", "requested", { reviewId: id, repo: repoLabel, payload: { source: "local", branch, base, model: model ?? null, effort: effort ?? null, skills } });
 
-  const [{ diff, files }, { subject, body }] = await Promise.all([
+  const [{ diff, files, baseRef, ownCommits, worktree, uncommittedFiles }, { subject, body }] = await Promise.all([
     getLocalDiff(repoPath, branch, base),
     getLatestCommitMessage(repoPath, branch),
   ]);
-  log(id, `fetched: diff=${diff.length} chars, files=${files.length}`);
+  log(id, `fetched: diff=${diff.length} chars, files=${files.length}, vs ${baseRef}, ${ownCommits} own commits, ${uncommittedFiles} uncommitted files${worktree ? ` in ${worktree}` : ""}`);
+
+  // Nothing of the branch's own to read: stop before spending a run on it.
+  if (!diff.trim()) {
+    throw new Error(
+      `Nothing to review: ${branch} has no commits of its own beyond ${baseRef}` +
+        (worktree ? ` and no uncommitted changes in ${worktree}.` : `, and it is not checked out in a readable worktree, so uncommitted work cannot be seen.`)
+    );
+  }
+  // The last commit on a branch with no commits of its own belongs to the base, not to this work.
+  const title = ownCommits > 0 && subject ? subject : `${branch} (uncommitted work)`;
 
   const snapshot: PrSnapshot = {
-    title: subject || `${branch} vs ${base}`,
-    body,
+    title,
+    body: ownCommits > 0 ? body : "",
     author: { login: "" },
     state: "open",
     isDraft: false,
@@ -604,12 +696,133 @@ export async function startLocalReview(
     updated_at: now,
   });
 
+  reviewTargets.set(id, { kind: "local", repo, number, repoLabel, branch, base });
   emit(id, "status", { status: "running" });
 
-  const subjectLine = `Review the local branch \`${branch}\` (diff vs \`${base}\`) in repo ${repoLabel} — ${snapshot.title}`;
+  const scope = [ownCommits > 0 && `${ownCommits} commit${ownCommits > 1 ? "s" : ""}`, uncommittedFiles > 0 && `${uncommittedFiles} uncommitted file${uncommittedFiles > 1 ? "s" : ""}`]
+    .filter(Boolean)
+    .join(" and ");
+  const subjectLine = `Review the local branch \`${branch}\` (${scope}, diff vs \`${baseRef}\`) in repo ${repoLabel} — ${snapshot.title}`;
   runReview(id, repo, number, subjectLine, snapshot, diff, { skills, model, effort, challengeExisting: false }).catch((err) => {
     failReview(id, err instanceof Error ? err.message : String(err));
   });
 
   return { repo, number };
+}
+
+/**
+ * A compare review has no PR number: it is keyed by repo and head, so "main of linea-geo-api"
+ * stays one review whose base (the tag in production) moves forward over time.
+ */
+/** The numbers a finished run recorded (cost, tokens, turns), for the event that closes it. */
+function runNumbers(runId: string): Record<string, unknown> {
+  const row = getDb()
+    .prepare("SELECT num_turns, duration_ms, cost_usd, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, session_id FROM review_runs WHERE id = ?")
+    .get(runId) as Record<string, unknown> | undefined;
+  return row ?? {};
+}
+
+export function compareIdentity(repo: string, head: string): { repo: string; number: number } {
+  const hash = createHash("sha1").update(`${repo}@${head}`).digest("hex").slice(0, 10);
+  return { repo: `compare/${repo.split("/")[1] ?? repo}-${hash}`, number: 0 };
+}
+
+export async function startCompareReview(
+  repo: string,
+  base: string,
+  head: string,
+  skills: string[] = [],
+  model?: string,
+  effort?: string
+): Promise<{ repo: string; number: number }> {
+  const db = getDb();
+  const identity = compareIdentity(repo, head);
+  const id = reviewId(identity.repo, identity.number);
+  const now = new Date().toISOString();
+
+  log(id, `=== STARTING COMPARE REVIEW === repo=${repo} ${base}...${head}`);
+  track("review", "requested", { reviewId: id, repo, payload: { source: "compare", base, head, model: model ?? null, effort: effort ?? null, skills } });
+  const compare = await fetchCompare(repo, base, head);
+  if (compare.truncated) {
+    throw new Error(
+      `Too large to review: ${head} is ${compare.aheadBy} commits ahead of ${base}, and GitHub truncates such a comparison, so the review would miss changes. Pick a closer base.`
+    );
+  }
+  const diff = await fetchCompareDiff(repo, base, head);
+  log(id, `fetched: ${compare.aheadBy} commits ahead, ${compare.files.length} files, diff=${diff.length} chars`);
+
+  if (!diff.trim()) throw new Error(`Nothing to review: ${head} has no changes beyond ${base} in ${repo}.`);
+
+  const commitList = compare.commits.map((c) => `- ${c.message.split("\n")[0]} (${c.sha.slice(0, 9)}${c.author ? `, ${c.author}` : ""})`).join("\n");
+  const snapshot: PrSnapshot = {
+    title: `${head} vs ${base}`,
+    body: `Commits in ${head} not in ${base}:\n${commitList}`,
+    author: { login: "" },
+    state: "open",
+    isDraft: false,
+    baseRefName: base,
+    headRefName: head,
+    headRefOid: compare.commits[compare.commits.length - 1]?.sha ?? "",
+    comments: [],
+    files: compare.files,
+  };
+
+  db.prepare(
+    `INSERT INTO reviews (id, repo, number, title, status, summary, error, diff, snapshot, skills, created_at, updated_at)
+     VALUES (@id, @repo, @number, @title, 'running', '', NULL, @diff, @snapshot, @skills, @created_at, @updated_at)
+     ON CONFLICT(id) DO UPDATE SET
+       status = 'running', summary = '', error = NULL, title = excluded.title, diff = excluded.diff, snapshot = excluded.snapshot,
+       skills = excluded.skills, updated_at = excluded.updated_at`
+  ).run({
+    id,
+    repo: identity.repo,
+    number: identity.number,
+    title: snapshot.title,
+    diff,
+    snapshot: JSON.stringify(snapshot),
+    skills: JSON.stringify(skills),
+    created_at: now,
+    updated_at: now,
+  });
+
+  reviewTargets.set(id, { kind: "compare", repo: identity.repo, number: identity.number, ghRepo: repo, base, head });
+  emit(id, "status", { status: "running" });
+
+  const subjectLine = `Review the ${compare.aheadBy} commit${compare.aheadBy > 1 ? "s" : ""} on \`${head}\` of ${repo} that are not in \`${base}\` yet — ${snapshot.title}`;
+  runReview(id, identity.repo, identity.number, subjectLine, snapshot, diff, { skills, model, effort, challengeExisting: false }).catch((err) => {
+    failReview(id, err instanceof Error ? err.message : String(err));
+  });
+
+  return identity;
+}
+
+/**
+ * Reads a finished run's saved output again and imports its report — no new Claude call. For a run
+ * that failed on a malformed report, once the parser can read it.
+ */
+export function reimportRun(runId: string): { reviewId: string; findings: number } {
+  const session = getRunSession(runId);
+  if (!session) throw new Error("run not found");
+  const { reviewId: id } = session.run;
+  const latest = getDb().prepare("SELECT id FROM review_runs WHERE review_id = ? ORDER BY started_at DESC LIMIT 1").get(id) as { id: string } | undefined;
+  if (latest?.id !== runId) throw new Error("only the latest run of a review can be read again: an older one would replace newer findings");
+
+  const result = session.events.find((e): e is { type: "result"; result: string } => !!e && typeof e === "object" && (e as { type?: unknown }).type === "result");
+  const text =
+    typeof result?.result === "string"
+      ? result.result
+      : session.events
+          .filter((e) => !!e && typeof e === "object" && (e as { type?: unknown }).type === "assistant")
+          .flatMap((e) => ((e as { message?: { content?: { type: string; text?: string }[] } }).message?.content ?? []))
+          .filter((c) => c.type === "text" && typeof c.text === "string")
+          .map((c) => c.text as string)
+          .join("");
+  if (!text.trim()) throw new Error("this run has no saved answer to read");
+
+  importReport(id, text);
+  getDb().prepare("UPDATE reviews SET error = NULL WHERE id = ?").run(id);
+  finishRun(runId, "reported");
+  const count = (getDb().prepare("SELECT COUNT(*) AS n FROM findings WHERE review_id = ?").get(id) as { n: number }).n;
+  track("review", "run.reimported", { reviewId: id, runId, payload: { findings: count } });
+  return { reviewId: id, findings: count };
 }

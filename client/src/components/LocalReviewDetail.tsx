@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useQuery } from "../hooks/useApi";
 import { useStoredState } from "../lib/storage";
 import NotFound from "./ui/NotFound";
-import { SessionButton } from "./RunSession";
+import { ReimportButton, ScopeNote, SessionButton } from "./RunSession";
 import { useSSE } from "../hooks/useSSE";
 import type { FindingDto, ReviewDto } from "../../../shared/types";
 import SeverityBadge from "./SeverityBadge";
@@ -32,6 +32,7 @@ export default function LocalReviewDetail({
   onBack,
   onSelectFinding,
   onOpenSession,
+  backLabel = "All branches",
 }: {
   repo: string;
   number: number;
@@ -41,6 +42,8 @@ export default function LocalReviewDetail({
   onBack: () => void;
   onSelectFinding: (id: string) => void;
   onOpenSession: (runId: string) => void;
+  /** Where Esc and the back button go: the branch list, or the compare screen. */
+  backLabel?: string;
 }) {
   // The open thread survives a refresh, in this tab only.
   const [view, setView] = useStoredState("session", `prd:view:local:${repo}#${number}`, { thread: false });
@@ -116,16 +119,16 @@ export default function LocalReviewDetail({
   useHotkeys({ Escape: onBack });
 
   if (reviewError && !reviewData) {
-    return <NotFound title="Local review not found" detail={`${repoLabel} · ${branch}: ${reviewError}`} backLabel="All branches" onBack={onBack} />;
+    return <NotFound title="Review not found" detail={`${repoLabel} · ${branch}: ${reviewError}`} backLabel={backLabel} onBack={onBack} />;
   }
 
   return (
     <main className="flex flex-col gap-4 px-10 pb-10 pt-5">
       <ShellActions>
         {review && <StatusBadge status={review.status} />}
-        <Button size="sm" onClick={onBack} aria-keyshortcuts="Escape" title="All branches (Esc)">
+        <Button size="sm" onClick={onBack} aria-keyshortcuts="Escape" title={`${backLabel} (Esc)`}>
           <Icon name="arrowLeft" />
-          All branches
+          {backLabel}
         </Button>
       </ShellActions>
 
@@ -174,7 +177,10 @@ export default function LocalReviewDetail({
               <Icon name="alert" className="size-3.5" />
               Review failed
             </Band>
-            <pre className="mx-5 mb-4 mt-3.5 max-w-[900px] whitespace-pre-wrap edge bg-surface px-2.5 py-2 font-mono text-xs leading-[18px] text-danger-ink">{review.error}</pre>
+            <div className="mx-5 mb-4 mt-3.5 flex items-start gap-3.5">
+              <pre className="max-w-[900px] flex-1 whitespace-pre-wrap edge bg-surface px-2.5 py-2 font-mono text-xs leading-[18px] text-danger-ink">{review.error}</pre>
+              <ReimportButton repo={repo} number={number} error={review.error} onDone={refetchReview} />
+            </div>
           </div>
         )}
 
@@ -187,6 +193,7 @@ export default function LocalReviewDetail({
             <p className="max-w-[960px] whitespace-pre-wrap px-5 pb-4 pt-3 text-fg-2">{review.summary}</p>
           </div>
         )}
+        {review && <ScopeNote repo={repo} number={number} status={review.status} onOpen={onOpenSession} />}
       </Card>
 
       {/* The fix prompt is the whole point of the local track, so it gets its own band. */}

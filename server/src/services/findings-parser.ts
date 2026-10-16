@@ -130,12 +130,67 @@ function extractSummary(parsed: unknown): string {
   return "";
 }
 
+/**
+ * Whether the `"` at index i ends a JSON string. Models sometimes quote words inside their text
+ * with plain `"` (`« 1 icône + "+1" »`); a real closing quote is followed by `,` `}` `]` `:` or the end.
+ */
+export function closesString(text: string, i: number): boolean {
+  for (let j = i + 1; j < text.length; j++) {
+    const ch = text[j];
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") continue;
+    return ch === "," || ch === "}" || ch === "]" || ch === ":";
+  }
+  return true;
+}
+
+/** Escapes the stray quotes and raw newlines a model left inside JSON strings; valid JSON is unchanged. */
+export function repairJson(raw: string): string {
+  let out = "";
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (!inString) {
+      if (ch === '"') inString = true;
+      out += ch;
+      continue;
+    }
+    if (escape) {
+      escape = false;
+      out += ch;
+    } else if (ch === "\\") {
+      escape = true;
+      out += ch;
+    } else if (ch === '"') {
+      if (closesString(raw, i)) {
+        inString = false;
+        out += ch;
+      } else {
+        out += '\\"';
+      }
+    } else if (ch === "\n") {
+      out += "\\n";
+    } else if (ch === "\r") {
+      out += "\\r";
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
 export function parseReport(raw: string): ParseResult {
   let parsed: unknown;
+  let repaired = false;
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
-    return { report: null, warnings: [], error: `invalid JSON: ${(err as Error).message}` };
+    try {
+      parsed = JSON.parse(repairJson(raw));
+      repaired = true;
+    } catch {
+      return { report: null, warnings: [], error: `invalid JSON: ${(err as Error).message}` };
+    }
   }
 
   const findingsRaw = extractFindingsArray(parsed);
@@ -154,6 +209,8 @@ export function parseReport(raw: string): ParseResult {
       warnings.push({ index, reason: warning });
     }
   });
+
+  if (repaired) warnings.unshift({ index: -1, reason: "the report had unescaped quotes or line breaks inside its text; they were escaped" });
 
   return {
     report: { summary: extractSummary(parsed), findings },
