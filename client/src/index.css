@@ -356,6 +356,190 @@
     --color-danger-fg: #0e100f;
   }
 
+  /* LINEA · light — the design system of linea-web-v2 (its src/index.css and DESIGN.md).
+     Its colours, radius, 1px borders and sentence-case labels; the Desk keeps its own fonts. */
+  [data-system="linea"] {
+    --linea-50: oklch(0.972 0.018 235);
+    --linea-100: oklch(0.94 0.04 235);
+    --linea-200: oklch(0.88 0.08 235);
+    --linea-300: oklch(0.795 0.12 235);
+    --linea-400: oklch(0.7 0.15 235);
+    --linea-500: oklch(0.62 0.155 235); /* #0385CA */
+    --linea-600: oklch(0.535 0.14 237);
+    --linea-700: oklch(0.45 0.115 240);
+    --linea-800: oklch(0.38 0.09 242);
+    --linea-900: oklch(0.31 0.07 244);
+    --linea-950: oklch(0.235 0.055 245);
+    --solaire-50: oklch(0.975 0.03 90);
+    --solaire-100: oklch(0.945 0.08 90);
+    --solaire-300: oklch(0.87 0.16 85);
+    --solaire-500: oklch(0.76 0.18 75);
+    --solaire-600: oklch(0.66 0.17 70);
+    --solaire-700: oklch(0.555 0.15 65);
+    --foret-50: oklch(0.97 0.03 155);
+    --foret-100: oklch(0.93 0.075 155);
+    --foret-300: oklch(0.8 0.14 152);
+    --foret-500: oklch(0.62 0.14 150);
+    --foret-600: oklch(0.54 0.13 150);
+    --foret-700: oklch(0.46 0.115 150);
+    --foret-900: oklch(0.33 0.08 152);
+    --destructive: oklch(0.577 0.245 27.325);
+
+    --font-display: var(--font-sans);
+    --label-font: var(--font-sans);
+    --label-size: 11px;
+    --label-weight: 600;
+    --label-transform: none;
+    --display-transform: none;
+    --edge-radius: var(--radius-md);
+
+    --bw: 1px;
+    --grid-color: transparent;
+    --grid-size: 0px;
+    --label-tracking: 0;
+    --row-h: 50px;
+    --ctl-h: 36px;
+    --page-pad: 24px;
+    --h1-weight: 700;
+    --h1-tracking: -0.025em;
+
+    --color-page: oklch(0.985 0.004 240);
+    --color-surface: oklch(1 0 0);
+    --color-subtle: oklch(0.965 0.01 240);
+    --color-subtle-2: oklch(0.94 0.012 240);
+    --color-border: oklch(0.91 0.012 245);
+    --color-border-soft: oklch(0.945 0.008 245);
+    --color-fg: oklch(0.18 0.02 245);
+    --color-fg-2: oklch(0.36 0.025 245);
+    --color-fg-3: oklch(0.51 0.025 245);
+    --color-muted: oklch(0.51 0.025 245);
+    --color-faint: oklch(0.51 0.025 245);
+
+    --color-primary: var(--linea-500);
+    --color-primary-hover: var(--linea-600);
+    --color-primary-fg: oklch(1 0 0);
+    --color-highlight: var(--linea-100);
+
+    --color-success: var(--foret-600);   --color-success-ink: var(--foret-700);
+    --color-warn: var(--solaire-500);    --color-warn-ink: var(--solaire-700);
+    --color-danger: var(--destructive);  --color-danger-ink: var(--destructive);
+
+    /* The status-badge recipe of DESIGN.md: a pale family fill, its dark shade as text. */
+    --color-sev-blocker-bg: oklch(0.577 0.245 27.325 / 0.1); --color-sev-blocker-fg: var(--destructive);
+    --color-sev-high-bg: var(--solaire-100);   --color-sev-high-fg: var(--solaire-700);
+    --color-sev-medium-bg: var(--solaire-50);  --color-sev-medium-fg: var(--solaire-600);
+    --color-sev-low-bg: var(--linea-50);       --color-sev-low-fg: var(--linea-700);
+    --color-sev-nit-bg: var(--color-subtle);   --color-sev-nit-fg: var(--color-fg-3);
+    --color-st-none-bg: var(--color-subtle);   --color-st-none-fg: var(--color-fg-3);
+    --color-st-queued-bg: var(--linea-50);     --color-st-queued-fg: var(--linea-700);
+    --color-st-running-bg: var(--solaire-50);  --color-st-running-fg: var(--solaire-700);
+    --color-st-reported-bg: var(--foret-50);   --color-st-reported-fg: var(--foret-700);
+    --color-st-failed-bg: oklch(0.577 0.245 27.325 / 0.1); --color-st-failed-fg: var(--destructive);
+
+    --color-diff-add-bg: var(--foret-50);  --color-diff-add-fg: var(--foret-700); --color-diff-add-gutter: var(--foret-100);
+    --color-diff-del-bg: oklch(0.97 0.02 25); --color-diff-del-fg: oklch(0.5 0.19 27); --color-diff-del-gutter: oklch(0.93 0.045 25);
+    --color-diff-hunk-bg: var(--color-subtle); --color-diff-hunk-fg: var(--color-fg-3);
+    --color-diff-hl-bg: var(--linea-50);   --color-diff-hl-fg: var(--color-fg); --color-diff-hl-gutter: var(--linea-100);
+
+    --color-term-bg: var(--linea-950); --color-term-border: var(--linea-900); --color-term-fg: oklch(0.97 0.005 240);
+    --color-term-muted: oklch(0.7 0.02 245); --color-term-tool: var(--linea-300);
+
+    --color-rail-bg: oklch(0.985 0 0); --color-rail-fg: oklch(0.51 0.025 245);
+    --color-rail-hover: oklch(0.965 0.01 240); --color-rail-line: oklch(0.91 0.012 245);
+
+    --radius-sm: 0.375rem; --radius-md: 0.5rem; --radius-lg: 0.625rem; --radius-xl: 0.875rem;
+    --shadow-lift: none; --shadow-lift-sm: none; --shadow-press: none;
+    --shadow-sm: none; --shadow-md: none; --shadow-lg: none;
+
+    --color-acid: var(--linea-50);
+    --color-acid-fg: var(--linea-700);
+    --color-acid-soft: var(--linea-50);
+    --color-rail-accent: var(--linea-500);
+    --color-inverse-accent: var(--linea-300);
+    --color-danger-soft: oklch(0.577 0.245 27.325 / 0.1);
+    --color-success-soft: var(--foret-50);
+    --color-term-line: oklch(0.45 0.03 245);
+    --color-diff-hl-marker: var(--linea-500);
+    --shadow-toast-ok: none;
+    --shadow-toast-err: none;
+    --color-danger-fg: oklch(1 0 0);
+    --color-seg-on-bg: var(--color-primary);
+    --color-seg-on-fg: var(--color-primary-fg);
+    --color-avatar-1: var(--linea-100);
+    --color-avatar-2: var(--solaire-100);
+    --color-avatar-3: var(--foret-100);
+    --color-avatar-4: var(--color-subtle-2);
+    --color-avatar-fg: var(--color-fg);
+    --color-sev-blocker-dot: var(--color-sev-blocker-fg);
+    --color-sev-high-dot: var(--color-sev-high-fg);
+    --color-sev-medium-dot: var(--color-sev-medium-fg);
+    --color-sev-low-dot: var(--color-sev-low-fg);
+    --color-sev-nit-dot: var(--color-sev-nit-fg);
+    --color-st-none-dot: var(--color-st-none-fg);
+    --color-st-queued-dot: var(--color-st-queued-fg);
+    --color-st-running-dot: var(--color-st-running-fg);
+    --color-st-reported-dot: var(--color-st-reported-fg);
+    --color-st-failed-dot: var(--color-st-failed-fg);
+  }
+
+  /* LINEA · dark — the .dark block of linea-web-v2. */
+  [data-system="linea"][data-theme="dark"] {
+    --destructive: oklch(0.704 0.191 22.216);
+
+    --color-page: oklch(0.15 0.025 245);
+    --color-surface: oklch(0.205 0.025 245);
+    --color-subtle: oklch(0.27 0.02 245);
+    --color-subtle-2: oklch(0.31 0.02 245);
+    --color-border: oklch(1 0 0 / 12%);
+    --color-border-soft: oklch(1 0 0 / 7%);
+    --color-fg: oklch(0.97 0.005 240);
+    --color-fg-2: oklch(0.85 0.01 240);
+    --color-fg-3: oklch(0.7 0.02 245);
+    --color-muted: oklch(0.7 0.02 245);
+    --color-faint: oklch(0.7 0.02 245);
+
+    --color-primary: var(--linea-400);
+    --color-primary-hover: var(--linea-300);
+    --color-primary-fg: oklch(0.15 0.025 245);
+    --color-highlight: var(--linea-900);
+
+    --color-success: var(--foret-500);   --color-success-ink: var(--foret-300);
+    --color-warn: var(--solaire-500);    --color-warn-ink: var(--solaire-300);
+    --color-danger: var(--destructive);  --color-danger-ink: var(--destructive);
+
+    --color-sev-blocker-bg: oklch(0.704 0.191 22.216 / 0.16); --color-sev-blocker-fg: var(--destructive);
+    --color-sev-high-bg: oklch(0.76 0.18 75 / 0.18);  --color-sev-high-fg: var(--solaire-300);
+    --color-sev-medium-bg: oklch(0.76 0.18 75 / 0.1); --color-sev-medium-fg: var(--solaire-100);
+    --color-sev-low-bg: oklch(0.7 0.15 235 / 0.16);   --color-sev-low-fg: var(--linea-300);
+    --color-st-queued-bg: oklch(0.7 0.15 235 / 0.16);   --color-st-queued-fg: var(--linea-300);
+    --color-st-running-bg: oklch(0.76 0.18 75 / 0.16); --color-st-running-fg: var(--solaire-300);
+    --color-st-reported-bg: oklch(0.62 0.14 150 / 0.18); --color-st-reported-fg: var(--foret-300);
+    --color-st-failed-bg: oklch(0.704 0.191 22.216 / 0.16); --color-st-failed-fg: var(--destructive);
+
+    --color-diff-add-bg: oklch(0.33 0.08 152 / 0.45); --color-diff-add-fg: var(--foret-300); --color-diff-add-gutter: var(--foret-900);
+    --color-diff-del-bg: oklch(0.4 0.12 25 / 0.35);  --color-diff-del-fg: oklch(0.8 0.1 25); --color-diff-del-gutter: oklch(0.35 0.1 25);
+    --color-diff-hl-bg: var(--linea-900); --color-diff-hl-gutter: var(--linea-800);
+
+    --color-term-bg: oklch(0.12 0.02 245); --color-term-border: oklch(0.27 0.02 245);
+
+    --color-rail-bg: oklch(0.205 0.025 245); --color-rail-fg: oklch(0.7 0.02 245);
+    --color-rail-hover: oklch(0.27 0.02 245); --color-rail-line: oklch(1 0 0 / 12%);
+
+    --color-acid: var(--linea-900);
+    --color-acid-fg: var(--linea-200);
+    --color-acid-soft: var(--linea-950);
+    --color-rail-accent: var(--linea-400);
+    --color-inverse-accent: var(--linea-600);
+    --color-danger-soft: oklch(0.704 0.191 22.216 / 0.16);
+    --color-success-soft: oklch(0.33 0.08 152 / 0.45);
+    --color-diff-hl-marker: var(--linea-400);
+    --color-danger-fg: oklch(0.15 0.025 245);
+    --color-avatar-1: var(--linea-800);
+    --color-avatar-2: var(--solaire-700);
+    --color-avatar-3: var(--foret-700);
+    --color-avatar-4: var(--color-subtle-2);
+  }
+
   *, ::before, ::after, ::backdrop, ::file-selector-button { border-color: var(--color-border); }
   html, body, #root { height: 100%; }
   body {
@@ -380,7 +564,8 @@
    that is what lets --bw swap 2px to 1px in one place. They set the width only:
    the colour defaults to --color-border (see the base rule below), so a colour
    utility such as `border-rail-line` or `border-transparent` still wins. */
-@utility edge { border-width: var(--bw); border-style: solid; }
+/* Only `edge` draws a whole box, so it alone takes the corner radius (0 outside Linea). */
+@utility edge { border-width: var(--bw); border-style: solid; border-radius: var(--edge-radius, 0px); }
 @utility edge-t { border-top-width: var(--bw); border-top-style: solid; }
 @utility edge-b { border-bottom-width: var(--bw); border-bottom-style: solid; }
 @utility edge-r { border-right-width: var(--bw); border-right-style: solid; }
@@ -405,22 +590,33 @@
   &:active { transform: translate(3px, 3px); box-shadow: none; }
 }
 [data-system="blueprint"] .press:hover,
-[data-system="blueprint"] .press:active { transform: none; box-shadow: none; }
+[data-system="blueprint"] .press:active,
+[data-system="linea"] .press:hover { transform: none; box-shadow: none; }
 [data-system="blueprint"] .press:hover { border-color: var(--color-fg-3); }
+/* Linea: hover shifts colour, never position; pressed sinks by a pixel (DESIGN.md, Motion). */
+[data-system="linea"] .press:hover { border-color: var(--color-primary); }
+[data-system="linea"] .press:active { transform: translateY(1px); box-shadow: none; }
+/* Components write their titles as `font-display uppercase`: Linea sets them in sentence case, bold and tight. */
+[data-system="linea"] .font-display {
+  text-transform: none;
+  font-weight: var(--h1-weight);
+  letter-spacing: var(--h1-tracking);
+}
 
+/* --label-* and --display-transform are set by Linea only, which writes labels and titles in sentence case. */
 @utility label-caps {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
+  font-family: var(--label-font, var(--font-mono));
+  font-size: var(--label-size, 10px);
+  font-weight: var(--label-weight, 700);
   letter-spacing: var(--label-tracking);
-  text-transform: uppercase;
+  text-transform: var(--label-transform, uppercase);
 }
 
 @utility display-title {
   font-family: var(--font-display);
   font-weight: var(--h1-weight);
   letter-spacing: var(--h1-tracking);
-  text-transform: uppercase;
+  text-transform: var(--display-transform, uppercase);
   line-height: 1.04;
 }
 

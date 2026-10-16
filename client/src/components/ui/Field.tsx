@@ -83,7 +83,7 @@ export function Segmented<T extends string>({ value, onChange, options, disabled
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={`${block ? "flex w-full" : "inline-flex"} edge ${disabled ? "border-fg-3 bg-subtle" : "bg-surface lift-sm"}`}
+      className={`${block ? "flex w-full" : "inline-flex"} overflow-hidden edge ${disabled ? "border-fg-3 bg-subtle" : "bg-surface lift-sm"}`}
     >
       {options.map((o) => {
         const on = o.value === value;
@@ -95,7 +95,7 @@ export function Segmented<T extends string>({ value, onChange, options, disabled
             aria-checked={on}
             disabled={disabled}
             onClick={() => onChange(o.value)}
-            className={`${block ? "flex-1" : ""} h-[calc(var(--ctl-h)-4px)] edge-l px-3 label-caps text-[11px] focus-ring first:border-l-0 disabled:cursor-not-allowed disabled:border-fg-3 disabled:text-fg-3 ${
+            className={`${block ? "min-w-0 flex-auto px-2 tracking-[.06em]" : "px-3"} h-[calc(var(--ctl-h)-4px)] edge-l label-caps text-[11px] focus-ring first:border-l-0 disabled:cursor-not-allowed disabled:border-fg-3 disabled:text-fg-3 ${
               on ? "bg-seg-on-bg text-seg-on-fg disabled:bg-subtle-2" : "text-fg-2 hover:bg-subtle hover:text-fg"
             }`}
           >
