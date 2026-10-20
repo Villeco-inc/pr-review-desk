@@ -21,6 +21,11 @@ const port = Number(process.env.PORT ?? 3100);
 
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
+// Express 5 leaves req.body undefined when a request carries no body: every route reads it as an object.
+app.use((req, _res, next) => {
+  req.body ??= {};
+  next();
+});
 
 app.use((req, _res, next) => {
   console.log(`[http] ${req.method} ${req.url}`);

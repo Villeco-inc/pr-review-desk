@@ -12,7 +12,7 @@ viewMemoryRouter.get("/view-memory", (_req, res) => {
 });
 
 viewMemoryRouter.put("/view-memory/prs", (req, res) => {
-  const { repo, filters } = (req.body ?? {}) as { repo?: unknown; filters?: unknown };
+  const { repo, filters } = req.body as { repo?: unknown; filters?: unknown };
   if (typeof repo !== "string") {
     res.status(400).json({ error: "repo is required" });
     return;
@@ -26,7 +26,7 @@ viewMemoryRouter.put("/view-memory/prs", (req, res) => {
 });
 
 viewMemoryRouter.put("/view-memory/local", (req, res) => {
-  const { label, selection: picked } = (req.body ?? {}) as { label?: unknown; selection?: unknown };
+  const { label, selection: picked } = req.body as { label?: unknown; selection?: unknown };
   if (typeof label !== "string") {
     res.status(400).json({ error: "label is required" });
     return;
