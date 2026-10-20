@@ -1,10 +1,9 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { getDb } from "../db/schema";
 import { fetchPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } from "../services/github";
 import { createPrRefresher } from "../services/pr-refresh";
-import { saveSelectedRepos, selectedRepos } from "../services/repo-selection";
+import { saveSelectedRepos, scopeOf, selectedRepos } from "../services/repo-selection";
 import { reviewId } from "../services/review-engine";
-import { ALL_REPOS } from "../../../shared/types";
 import type { FindingRow, MyReviewState, PullRequest, PullRequestDto, ReviewRow } from "../../../shared/types";
 
 export const prsRouter = Router();
@@ -15,15 +14,22 @@ const refresher = createPrRefresher({
   selected: () => selectedRepos(getDb(), process.env.REPOS),
 });
 
-const REFRESH_EVERY_MS = 90_000;
-
 /** Warms the cache now, then keeps it fresh while a client is looking. */
 export function startPrRefresh(): void {
-  void refresher.warm();
-  setInterval(() => void refresher.tick(), REFRESH_EVERY_MS);
+  refresher.start();
 }
 
-const reposOf = (repo: string) => (repo === ALL_REPOS ? selectedRepos(getDb(), process.env.REPOS) : [repo]);
+/** The repositories the request's `repo` stands for, or null once a 400 has been sent: only selected ones are served. */
+function scopeFor(req: Request, res: Response): string[] | null {
+  const repo = String(req.query.repo ?? "");
+  if (!repo) {
+    res.status(400).json({ error: "repo query param is required" });
+    return null;
+  }
+  const scope = scopeOf(repo, selectedRepos(getDb(), process.env.REPOS));
+  if (!scope) res.status(400).json({ error: `${repo} is not a selected repository` });
+  return scope;
+}
 
 function reviewStatusFor(repo: string, number: number): ReviewRow | undefined {
   const db = getDb();
@@ -82,16 +88,13 @@ prsRouter.get("/viewer", async (_req, res) => {
 });
 
 prsRouter.get("/prs", async (req, res) => {
-  const repo = String(req.query.repo ?? "");
-  if (!repo) {
-    res.status(400).json({ error: "repo query param is required" });
-    return;
-  }
+  const scope = scopeFor(req, res);
+  if (!scope) return;
 
   refresher.touch();
 
   try {
-    const prs = await refresher.list(reposOf(repo));
+    const prs = await refresher.list(scope);
     // The list still loads if the viewer lookup fails; the column just stays empty.
     const viewer = await getViewer().catch(() => null);
     const dtos: PullRequestDto[] = prs.map((pr) => {
@@ -113,28 +116,22 @@ prsRouter.get("/prs", async (req, res) => {
 
 /** Asks GitHub now instead of waiting for the next refresh; the list is read again with GET /prs. */
 prsRouter.post("/refresh", async (req, res) => {
-  const repo = String(req.query.repo ?? "");
-  if (!repo) {
-    res.status(400).json({ error: "repo query param is required" });
-    return;
-  }
+  const scope = scopeFor(req, res);
+  if (!scope) return;
   refresher.touch();
   try {
-    await refresher.list(reposOf(repo), true);
-    res.json(refresher.freshness(reposOf(repo)));
+    await refresher.list(scope, true);
+    res.json(refresher.freshness(scope));
   } catch (err) {
     res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
 prsRouter.get("/freshness", (req, res) => {
-  const repo = String(req.query.repo ?? "");
-  if (!repo) {
-    res.status(400).json({ error: "repo query param is required" });
-    return;
-  }
+  const scope = scopeFor(req, res);
+  if (!scope) return;
   refresher.touch();
-  res.json(refresher.freshness(reposOf(repo)));
+  res.json(refresher.freshness(scope));
 });
 
 prsRouter.get("/prs/:owner/:name/:number", async (req, res) => {

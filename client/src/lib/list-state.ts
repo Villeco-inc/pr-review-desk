@@ -6,9 +6,25 @@ export interface ListState {
   listLoading: boolean;
   /** The list, or the freshness it waits for, came back with an error. */
   failed: boolean;
+  /** The selected repositories are not known yet, so nothing may be asked for. */
+  waitingForRepos: boolean;
 }
 
 /** True from the moment a repository is shown until its rows or an error arrive, so the empty state never flashes in between. */
-export function isListLoading({ repo, rowsAreCurrent, listLoading, failed }: ListState): boolean {
-  return listLoading || (repo !== "" && !rowsAreCurrent && !failed);
+export function isListLoading({ repo, rowsAreCurrent, listLoading, failed, waitingForRepos }: ListState): boolean {
+  return listLoading || waitingForRepos || (repo !== "" && !rowsAreCurrent && !failed);
+}
+
+export interface ErrorSources {
+  hasRepos: boolean;
+  reposError: string | null;
+  listError: string | null;
+  freshnessError: string | null;
+  hasFreshness: boolean;
+}
+
+/** The error to show above the list: the selection's first, since nothing loads without it, then the list's, then the freshness it waits for. */
+export function shownError({ hasRepos, reposError, listError, freshnessError, hasFreshness }: ErrorSources): string | null {
+  if (!hasRepos && reposError) return reposError;
+  return listError ?? (hasFreshness ? null : freshnessError);
 }

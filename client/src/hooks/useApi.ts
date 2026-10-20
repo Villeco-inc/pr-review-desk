@@ -60,10 +60,15 @@ export function useQuery<T>(url: string | null, deps: unknown[] = [], staleMs = 
 
   useEffect(() => {
     if (!pollMs || !url) return;
-    const timer = setInterval(() => {
+    const reload = () => {
       if (document.visibilityState === "visible") run(true);
-    }, pollMs);
-    return () => clearInterval(timer);
+    };
+    const timer = setInterval(reload, pollMs);
+    document.addEventListener("visibilitychange", reload); // back on the tab: ask now, not at the next period
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", reload);
+    };
   }, [pollMs, url, run]);
 
   useEffect(() => {

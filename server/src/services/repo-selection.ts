@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { ALL_REPOS } from "../../../shared/types";
 
 // The repositories the PR list shows. Picked in the app and kept in the database; until a pick
 // is saved, REPOS from .env stands in for it, so an existing install keeps working unchanged.
@@ -20,6 +21,12 @@ function savedRepos(db: Database.Database): string[] | null {
 
 export function selectedRepos(db: Database.Database, envRepos: string | undefined): string[] {
   return savedRepos(db) ?? parseRepoList(envRepos);
+}
+
+/** The repositories a `repo` request stands for: the whole selection for "all", itself when selected, null for anything else. */
+export function scopeOf(repo: string, selected: string[]): string[] | null {
+  if (repo === ALL_REPOS) return selected;
+  return selected.includes(repo) ? [repo] : null;
 }
 
 /** Saves the pick and returns the repositories it added to the one saved before. */

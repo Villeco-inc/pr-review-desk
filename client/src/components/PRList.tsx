@@ -17,7 +17,7 @@ import { ShellActions, useRailCount } from "./AppShell";
 import { focusedAttr, moveFocus, useHotkeys } from "../hooks/useHotkeys";
 import { describePrListError } from "../lib/github-errors";
 import { describeFreshness } from "../lib/freshness";
-import { isListLoading } from "../lib/list-state";
+import { isListLoading, shownError } from "../lib/list-state";
 import { useNow } from "../hooks/useNow";
 import { savePrOrder, type PrListSearch, type SortKey, type SortDir } from "../lib/url-state";
 
@@ -75,7 +75,7 @@ export default function PRList({
   onRepoChange: (repo: string) => void;
   onSelectPR: (repo: string, number: number) => void;
 }) {
-  const { data: repos } = useRepos();
+  const { data: repos, error: reposError, refetch: refetchRepos } = useRepos();
   const { data: viewer } = useQuery<{ login: string }>("/api/viewer", [], 5 * 60_000);
   const [refreshKey, setRefreshKey] = useState(0);
   const authors = useMemo(() => new Set(search.author ?? []), [search.author]);
@@ -104,7 +104,8 @@ export default function PRList({
   };
 
   const knownRepo = (r: string | undefined) => !!r && (r === ALL_REPOS || (repos ?? []).includes(r));
-  const repo = repos ? (knownRepo(search.repo) ? search.repo! : repos[0] ?? "") : search.repo ?? "";
+  // Nothing is asked for until the selection is known: a remembered repository may no longer be one.
+  const repo = repos ? (knownRepo(search.repo) ? search.repo! : repos[0] ?? "") : "";
   const isAllView = repo === ALL_REPOS;
 
   // Write the effective repo into the URL once the repo list is known. A remembered repo that is
@@ -133,10 +134,10 @@ export default function PRList({
     [repo, refreshKey, freshness?.version],
     0
   );
-  const error = listError ?? (freshness ? null : freshnessError);
+  const error = shownError({ hasRepos: !!repos, reposError, listError, freshnessError, hasFreshness: !!freshness });
   // Right after a repo switch the previous repo's rows are still in hand for a frame.
   const rowsAreCurrent = !!prs && dataKey === prsKey;
-  const loading = isListLoading({ repo, rowsAreCurrent, listLoading, failed: !!error });
+  const loading = isListLoading({ repo, rowsAreCurrent, listLoading, failed: !!error, waitingForRepos: !repos && !reposError });
   const prsAreCurrent = rowsAreCurrent && !loading;
   // The age speaks for the rows on screen: it waits while they reload and while a reload failed.
   const freshnessText = freshness ? describeFreshness(freshness, now) : null;
@@ -273,7 +274,7 @@ export default function PRList({
           <span className="font-mono text-xs text-danger-ink">
             {describePrListError(error)}
           </span>
-          <Button size="sm" className="ml-auto" onClick={refresh}>
+          <Button size="sm" className="ml-auto" onClick={repos ? refresh : refetchRepos}>
             <Icon name="refresh" />
             Retry
           </Button>

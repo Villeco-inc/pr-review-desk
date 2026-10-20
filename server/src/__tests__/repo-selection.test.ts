@@ -4,7 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { migrate } from "../db/schema";
-import { saveSelectedRepos, selectedRepos } from "../services/repo-selection";
+import { saveSelectedRepos, scopeOf, selectedRepos } from "../services/repo-selection";
 
 const dirs: string[] = [];
 
@@ -52,6 +52,24 @@ describe("selected repositories", () => {
     expect(saveSelectedRepos(db, ["Villeco-inc/linea-web"])).toEqual(["Villeco-inc/linea-web"]);
     expect(saveSelectedRepos(db, ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile", "Villeco-inc/linea-mobile"])).toEqual(["Villeco-inc/linea-mobile"]);
     expect(saveSelectedRepos(db, ["Villeco-inc/linea-mobile"])).toEqual([]);
+  });
+
+  it("reads 'all' as the whole selection and a selected repository as itself", () => {
+    const selection = ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"];
+    expect(scopeOf("all", selection)).toEqual(selection);
+    expect(scopeOf("Villeco-inc/linea-mobile", selection)).toEqual(["Villeco-inc/linea-mobile"]);
+  });
+
+  it("refuses what is not selected, whatever it looks like", () => {
+    const selection = ["Villeco-inc/linea-web"];
+    expect(scopeOf("Villeco-inc/linea-mobile", selection)).toBeNull();
+    expect(scopeOf("--help", selection)).toBeNull();
+    expect(scopeOf("org:Villeco-inc", selection)).toBeNull();
+    expect(scopeOf("", selection)).toBeNull();
+  });
+
+  it("reads 'all' as nothing when nothing is selected", () => {
+    expect(scopeOf("all", [])).toEqual([]);
   });
 
   it("refuses an empty pick and keeps the previous one", () => {

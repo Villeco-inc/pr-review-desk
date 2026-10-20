@@ -6,11 +6,34 @@ export interface PrRefresherDeps {
   fetchPrs: (repo: string) => Promise<PullRequest[]>;
   selected: () => string[];
   now?: () => number;
+  /** Delay before the next refresh, read again at every cycle so it can change while the server runs. */
+  refreshEveryMs?: () => number;
+  /** How long after a client was last seen the refreshes go on, read again at every tick. */
+  activeWindowMs?: () => number;
 }
 
+const REFRESH_EVERY_MS = 90_000;
 const ACTIVE_WINDOW_MS = 10 * 60_000;
 
-export function createPrRefresher({ db, fetchPrs, selected, now = Date.now }: PrRefresherDeps) {
+/** A setting that cannot be read, or is not a positive number, falls back to its default instead of breaking the schedule. */
+function read(setting: () => number, fallback: number): number {
+  try {
+    const value = setting();
+    if (Number.isFinite(value) && value > 0) return value;
+  } catch {
+    // an unusable setting takes the default
+  }
+  return fallback;
+}
+
+export function createPrRefresher({
+  db,
+  fetchPrs,
+  selected,
+  now = Date.now,
+  refreshEveryMs = () => REFRESH_EVERY_MS,
+  activeWindowMs = () => ACTIVE_WINDOW_MS,
+}: PrRefresherDeps) {
   const errors = new Map<string, string>();
 
   function cached(repo: string): PullRequest[] | null {
@@ -56,8 +79,12 @@ export function createPrRefresher({ db, fetchPrs, selected, now = Date.now }: Pr
   }
 
   /** Refreshes the given repositories, the selected ones by default; a failure is kept for freshness(), never thrown. */
-  async function warm(repos: string[] = selected()): Promise<void> {
-    await Promise.allSettled(repos.map(refreshRepo));
+  async function warm(repos?: string[]): Promise<void> {
+    try {
+      await Promise.allSettled((repos ?? selected()).map(refreshRepo));
+    } catch (err) {
+      console.error("[refresh] the selected repositories could not be read:", err);
+    }
   }
 
   function freshness(repos: string[]): Freshness {
@@ -75,14 +102,33 @@ export function createPrRefresher({ db, fetchPrs, selected, now = Date.now }: Pr
   // Nobody looking means nobody to refresh for: GitHub is only asked while a client was seen lately.
   let lastSeen: number | null = null;
 
+  // A client back after the quiet period gets fresh data at once instead of waiting for the next tick.
+  // The very first visit does not count: the refresh at startup already covers it.
   function touch(): void {
+    const wasQuiet = lastSeen !== null && now() - lastSeen >= read(activeWindowMs, ACTIVE_WINDOW_MS);
     lastSeen = now();
+    if (wasQuiet) void warm();
   }
 
   async function tick(): Promise<void> {
-    if (lastSeen === null || now() - lastSeen >= ACTIVE_WINDOW_MS) return;
+    if (lastSeen === null || now() - lastSeen >= read(activeWindowMs, ACTIVE_WINDOW_MS)) return;
     await warm();
   }
 
-  return { list, warm, freshness, tick, touch };
+  /** Refreshes now, then again after each delay, until the returned function is called. */
+  function start(): () => void {
+    void warm();
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      timer = setTimeout(() => void tick().then(() => !stopped && schedule()), read(refreshEveryMs, REFRESH_EVERY_MS));
+    };
+    schedule();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }
+
+  return { list, warm, freshness, tick, touch, start };
 }

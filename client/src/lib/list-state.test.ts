@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { isListLoading } from "./list-state";
+import { isListLoading, shownError } from "./list-state";
 
-const loaded = { repo: "Villeco-inc/linea-web", rowsAreCurrent: true, listLoading: false, failed: false };
+const loaded = { repo: "Villeco-inc/linea-web", rowsAreCurrent: true, listLoading: false, failed: false, waitingForRepos: false };
 
 describe("isListLoading", () => {
   it("is not loading when no repository is selected", () => {
@@ -20,7 +20,32 @@ describe("isListLoading", () => {
     expect(isListLoading({ ...loaded, rowsAreCurrent: false, failed: true })).toBe(false);
   });
 
+  it("is loading until the selection is known, even with no repository to show yet", () => {
+    expect(isListLoading({ ...loaded, repo: "", rowsAreCurrent: false, waitingForRepos: true })).toBe(true);
+  });
+
   it("is loading while a reload runs, even with rows on hand", () => {
     expect(isListLoading({ ...loaded, listLoading: true })).toBe(true);
+  });
+});
+
+describe("shownError", () => {
+  const none = { hasRepos: true, reposError: null, listError: null, freshnessError: null, hasFreshness: false };
+
+  it("shows the selection's error while the selection is unknown, since nothing can load without it", () => {
+    expect(shownError({ ...none, hasRepos: false, reposError: "Failed to fetch" })).toBe("Failed to fetch");
+  });
+
+  it("ignores an old selection error once the selection is known", () => {
+    expect(shownError({ ...none, reposError: "Failed to fetch", listError: "gh: HTTP 401" })).toBe("gh: HTTP 401");
+  });
+
+  it("shows the freshness error only while no freshness is in hand", () => {
+    expect(shownError({ ...none, freshnessError: "Failed to fetch" })).toBe("Failed to fetch");
+    expect(shownError({ ...none, freshnessError: "Failed to fetch", hasFreshness: true })).toBeNull();
+  });
+
+  it("shows nothing when nothing failed", () => {
+    expect(shownError(none)).toBeNull();
   });
 });
