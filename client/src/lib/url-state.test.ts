@@ -14,6 +14,7 @@ import {
   stringifySearch,
   validatePrListSearch,
 } from "./url-state";
+import { resetViewMemory } from "./view-memory";
 
 class MemoryStorage {
   private m = new Map<string, string>();
@@ -30,6 +31,7 @@ class MemoryStorage {
 
 beforeEach(() => {
   (globalThis as { window?: unknown }).window = { localStorage: new MemoryStorage(), sessionStorage: new MemoryStorage() };
+  resetViewMemory();
 });
 
 describe("search round trip", () => {

@@ -8,6 +8,7 @@ import { parseRepoList, selectedRepos } from "./services/repo-selection";
 import { reviewsRouter } from "./routes/reviews";
 import { findingsRouter } from "./routes/findings";
 import { localRouter } from "./routes/local";
+import { viewMemoryRouter } from "./routes/view-memory";
 import { failInterruptedRuns } from "./services/run-log";
 
 const db = getDb();
@@ -30,6 +31,7 @@ app.use("/api", prsRouter);
 app.use("/api", reviewsRouter);
 app.use("/api", findingsRouter);
 app.use("/api", localRouter);
+app.use("/api", viewMemoryRouter);
 
 if (process.env.NODE_ENV === "production") {
   const distDir = path.join(process.cwd(), "dist");
