@@ -1,0 +1,246 @@
+import Database from "better-sqlite3";
+import { describe, expect, it } from "vitest";
+import { migrate } from "../db/schema";
+import { createPrRefresher } from "../services/pr-refresh";
+import type { PullRequest } from "../../../shared/types";
+
+function openDb(): Database.Database {
+  const db = new Database(":memory:");
+  migrate(db);
+  return db;
+}
+
+function pr(repo: string, title: string): PullRequest {
+  return {
+    repo,
+    number: 1,
+    title,
+    author: "dann",
+    url: `https://github.com/${repo}/pull/1`,
+    updatedAt: "2026-10-15T12:00:00Z",
+    isDraft: false,
+    additions: 1,
+    deletions: 0,
+    changedFiles: 1,
+    headRefOid: "abc",
+    baseRefName: "main",
+    headRefName: "feat/x",
+    labels: [],
+    reviewDecision: null,
+  };
+}
+
+// GitHub, the only boundary: every fetch answers with the next version, so a title says which fetch it came from.
+function fakeGithub(failing: string[] = []) {
+  const calls: string[] = [];
+  return {
+    calls,
+    fetchPrs: async (repo: string) => {
+      calls.push(repo);
+      if (failing.includes(repo)) throw new Error("gh: not found");
+      return [pr(repo, `v${calls.length}`)];
+    },
+  };
+}
+
+const titles = (prs: PullRequest[]) => prs.map((p) => p.title);
+
+describe("pull request cache", () => {
+  it("fetches a repository once and serves the cache afterwards", async () => {
+    const gh = fakeGithub();
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => [] });
+
+    expect(titles(await refresher.list(["Villeco-inc/linea-web"]))).toEqual(["v1"]);
+    expect(titles(await refresher.list(["Villeco-inc/linea-web"]))).toEqual(["v1"]);
+  });
+
+  it("serves the repositories that have data when another never had any", async () => {
+    const gh = fakeGithub(["Villeco-inc/linea-mobile"]);
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => [] });
+    const both = ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"];
+
+    expect(titles(await refresher.list(both))).toEqual(["v1"]);
+    expect(refresher.freshness(both)).toMatchObject({ fetchedAt: null, error: "gh: not found" });
+  });
+
+  it("does not ask GitHub again on a read for a repository that just failed", async () => {
+    const gh = fakeGithub(["Villeco-inc/linea-mobile"]);
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => [] });
+    const both = ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"];
+
+    await refresher.list(both);
+    await refresher.list(both);
+
+    expect(gh.calls).toEqual(["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"]);
+  });
+
+  it("reports the error on every read when nothing can be shown, asking GitHub once", async () => {
+    const gh = fakeGithub(["Villeco-inc/linea-mobile"]);
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => [] });
+
+    await expect(refresher.list(["Villeco-inc/linea-mobile"])).rejects.toThrow("gh: not found");
+    await expect(refresher.list(["Villeco-inc/linea-mobile"])).rejects.toThrow("gh: not found");
+
+    expect(gh.calls).toEqual(["Villeco-inc/linea-mobile"]);
+  });
+
+  it("fetches again when a refresh is forced", async () => {
+    const gh = fakeGithub();
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => [] });
+
+    await refresher.list(["Villeco-inc/linea-web"]);
+
+    expect(titles(await refresher.list(["Villeco-inc/linea-web"], true))).toEqual(["v2"]);
+  });
+
+  it("joins several repositories in the order asked", async () => {
+    const gh = fakeGithub();
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => [] });
+
+    const prs = await refresher.list(["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"]);
+
+    expect(prs.map((p) => `${p.repo} ${p.title}`)).toEqual(["Villeco-inc/linea-web v1", "Villeco-inc/linea-mobile v2"]);
+  });
+
+  it("warms every selected repository, reading the selection again each time", async () => {
+    const gh = fakeGithub();
+    let selection = ["Villeco-inc/linea-web"];
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => selection });
+
+    await refresher.warm();
+    selection = ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"];
+    await refresher.warm();
+
+    expect(titles(await refresher.list(selection))).toEqual(["v2", "v3"]);
+  });
+
+  it("shares one fetch between simultaneous requests for the same repository", async () => {
+    const gh = fakeGithub();
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => [] });
+
+    const [first, second] = await Promise.all([refresher.list(["Villeco-inc/linea-web"]), refresher.list(["Villeco-inc/linea-web"])]);
+
+    expect(titles(first)).toEqual(["v1"]);
+    expect(titles(second)).toEqual(["v1"]);
+  });
+
+  it("warms only the repositories it is given", async () => {
+    const gh = fakeGithub();
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => ["Villeco-inc/linea-web", "Villeco-inc/villeco"] });
+
+    await refresher.warm(["Villeco-inc/linea-mobile"]);
+
+    expect(gh.calls).toEqual(["Villeco-inc/linea-mobile"]);
+  });
+
+  it("ticks only while a client was seen in the last ten minutes", async () => {
+    const repo = "Villeco-inc/linea-web";
+    const gh = fakeGithub();
+    let clock = Date.parse("2026-10-15T12:00:00Z");
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => [repo], now: () => clock });
+
+    await refresher.tick();
+    expect(gh.calls).toEqual([]);
+
+    refresher.touch();
+    clock += 9 * 60_000;
+    await refresher.tick();
+    expect(gh.calls).toEqual([repo]);
+
+    clock += 2 * 60_000;
+    await refresher.tick();
+    expect(gh.calls).toEqual([repo]);
+  });
+
+  it("dates a group of repositories by the oldest fetch, and by nothing while one was never fetched", async () => {
+    let clock = Date.parse("2026-10-15T12:00:00Z");
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: fakeGithub().fetchPrs, selected: () => [], now: () => clock });
+    const web = "Villeco-inc/linea-web";
+    const mobile = "Villeco-inc/linea-mobile";
+
+    await refresher.list([web]);
+    expect(refresher.freshness([web, mobile]).fetchedAt).toBeNull();
+
+    clock += 90_000;
+    await refresher.list([mobile]);
+    expect(refresher.freshness([web, mobile]).fetchedAt).toBe("2026-10-15T12:00:00.000Z");
+    expect(refresher.freshness([mobile]).fetchedAt).toBe("2026-10-15T12:01:30.000Z");
+  });
+
+  it("changes its version whenever any repository is fetched again, even when the oldest fetch does not move", async () => {
+    let clock = Date.parse("2026-10-15T12:00:00Z");
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: fakeGithub().fetchPrs, selected: () => [], now: () => clock });
+    const both = ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"];
+
+    await refresher.list(both);
+    const before = refresher.freshness(both);
+    clock += 90_000;
+    await refresher.warm(["Villeco-inc/linea-mobile"]);
+    const after = refresher.freshness(both);
+
+    expect(after.fetchedAt).toBe(before.fetchedAt);
+    expect(after.version).not.toBe(before.version);
+    expect(refresher.freshness(both).version).toBe(after.version);
+  });
+
+  it("keeps the recorded error when the fetched list cannot be stored", async () => {
+    const repo = "Villeco-inc/linea-web";
+    let attempt = 0;
+    const refresher = createPrRefresher({
+      db: openDb(),
+      fetchPrs: async (r) => {
+        attempt += 1;
+        if (attempt === 1) throw new Error("gh: HTTP 401");
+        return [{ ...pr(r, "v2"), additions: BigInt(10) as unknown as number }];
+      },
+      selected: () => [],
+    });
+
+    await refresher.warm([repo]);
+    await refresher.warm([repo]);
+
+    expect(refresher.freshness([repo])).toMatchObject({ fetchedAt: null, error: "gh: HTTP 401" });
+  });
+
+  it("waits for every repository on a forced refresh before reporting a failure", async () => {
+    const web = "Villeco-inc/linea-web";
+    const mobile = "Villeco-inc/linea-mobile";
+    const refresher = createPrRefresher({
+      db: openDb(),
+      fetchPrs: async (repo) => {
+        if (repo === mobile) throw new Error("gh: not found");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return [pr(repo, "slow")];
+      },
+      selected: () => [],
+      now: () => Date.parse("2026-10-15T12:00:00Z"),
+    });
+
+    await expect(refresher.list([mobile, web], true)).rejects.toThrow("gh: not found");
+
+    expect(refresher.freshness([web]).fetchedAt).toBe("2026-10-15T12:00:00.000Z");
+  });
+
+  it("keeps the cached list when a refresh fails and reports the error", async () => {
+    const repo = "Villeco-inc/linea-web";
+    let clock = Date.parse("2026-10-15T12:00:00Z");
+    let failing = false;
+    const refresher = createPrRefresher({
+      db: openDb(),
+      fetchPrs: async (r) => {
+        if (failing) throw new Error("gh: HTTP 401");
+        return [pr(r, "v1")];
+      },
+      selected: () => [repo],
+      now: () => clock,
+    });
+
+    await refresher.warm();
+    clock += 90_000;
+    failing = true;
+    await refresher.warm();
+
+    expect(titles(await refresher.list([repo]))).toEqual(["v1"]);
+    expect(refresher.freshness([repo])).toMatchObject({ fetchedAt: "2026-10-15T12:00:00.000Z", error: "gh: HTTP 401" });
+  });
+});

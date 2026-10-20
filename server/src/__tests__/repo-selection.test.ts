@@ -47,6 +47,13 @@ describe("selected repositories", () => {
     expect(selectedRepos(db, undefined)).toEqual(["Villeco-inc/linea-web"]);
   });
 
+  it("tells which repositories a pick added to the previous one", () => {
+    const db = openDb();
+    expect(saveSelectedRepos(db, ["Villeco-inc/linea-web"])).toEqual(["Villeco-inc/linea-web"]);
+    expect(saveSelectedRepos(db, ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile", "Villeco-inc/linea-mobile"])).toEqual(["Villeco-inc/linea-mobile"]);
+    expect(saveSelectedRepos(db, ["Villeco-inc/linea-mobile"])).toEqual([]);
+  });
+
   it("refuses an empty pick and keeps the previous one", () => {
     const db = openDb();
     saveSelectedRepos(db, ["Villeco-inc/villeco"]);

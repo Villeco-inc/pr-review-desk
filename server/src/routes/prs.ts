@@ -1,11 +1,29 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
-import { listPullRequests, listOrgPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } from "../services/github";
+import { fetchPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } from "../services/github";
+import { createPrRefresher } from "../services/pr-refresh";
 import { saveSelectedRepos, selectedRepos } from "../services/repo-selection";
 import { reviewId } from "../services/review-engine";
+import { ALL_REPOS } from "../../../shared/types";
 import type { FindingRow, MyReviewState, PullRequest, PullRequestDto, ReviewRow } from "../../../shared/types";
 
 export const prsRouter = Router();
+
+const refresher = createPrRefresher({
+  db: getDb(),
+  fetchPrs: fetchPullRequests,
+  selected: () => selectedRepos(getDb(), process.env.REPOS),
+});
+
+const REFRESH_EVERY_MS = 90_000;
+
+/** Warms the cache now, then keeps it fresh while a client is looking. */
+export function startPrRefresh(): void {
+  void refresher.warm();
+  setInterval(() => void refresher.tick(), REFRESH_EVERY_MS);
+}
+
+const reposOf = (repo: string) => (repo === ALL_REPOS ? selectedRepos(getDb(), process.env.REPOS) : [repo]);
 
 function reviewStatusFor(repo: string, number: number): ReviewRow | undefined {
   const db = getDb();
@@ -38,7 +56,8 @@ prsRouter.put("/repos", (req, res) => {
     return;
   }
   try {
-    saveSelectedRepos(getDb(), repos);
+    const added = saveSelectedRepos(getDb(), repos);
+    void refresher.warm(added);
     res.json(selectedRepos(getDb(), process.env.REPOS));
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
@@ -69,10 +88,10 @@ prsRouter.get("/prs", async (req, res) => {
     return;
   }
 
-  const force = req.query.refresh === "true";
+  refresher.touch();
 
   try {
-    const prs = repo.startsWith("org:") ? await listOrgPullRequests(repo.slice(4), force) : await listPullRequests(repo, force);
+    const prs = await refresher.list(reposOf(repo));
     // The list still loads if the viewer lookup fails; the column just stays empty.
     const viewer = await getViewer().catch(() => null);
     const dtos: PullRequestDto[] = prs.map((pr) => {
@@ -90,6 +109,32 @@ prsRouter.get("/prs", async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }
+});
+
+/** Asks GitHub now instead of waiting for the next refresh; the list is read again with GET /prs. */
+prsRouter.post("/refresh", async (req, res) => {
+  const repo = String(req.query.repo ?? "");
+  if (!repo) {
+    res.status(400).json({ error: "repo query param is required" });
+    return;
+  }
+  refresher.touch();
+  try {
+    await refresher.list(reposOf(repo), true);
+    res.json(refresher.freshness(reposOf(repo)));
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+prsRouter.get("/freshness", (req, res) => {
+  const repo = String(req.query.repo ?? "");
+  if (!repo) {
+    res.status(400).json({ error: "repo query param is required" });
+    return;
+  }
+  refresher.touch();
+  res.json(refresher.freshness(reposOf(repo)));
 });
 
 prsRouter.get("/prs/:owner/:name/:number", async (req, res) => {

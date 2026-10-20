@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { getDb } from "../db/schema";
 import type { PullRequest } from "../../../shared/types";
 
 const execFileAsync = promisify(execFile);
@@ -92,14 +91,7 @@ function toPullRequest(repo: string, item: GhPrListItem): PullRequest {
   };
 }
 
-export async function listPullRequests(repo: string, force = false): Promise<PullRequest[]> {
-  const db = getDb();
-
-  if (!force) {
-    const cached = db.prepare("SELECT prs FROM pr_cache WHERE repo = ?").get(repo) as { prs: string } | undefined;
-    if (cached) return JSON.parse(cached.prs) as PullRequest[];
-  }
-
+export async function fetchPullRequests(repo: string): Promise<PullRequest[]> {
   const stdout = await runGh([
     "pr",
     "list",
@@ -113,113 +105,7 @@ export async function listPullRequests(repo: string, force = false): Promise<Pul
     PR_LIST_FIELDS,
   ]);
 
-  const items = JSON.parse(stdout) as GhPrListItem[];
-  const prs = items.map((item) => toPullRequest(repo, item));
-
-  db.prepare(
-    `INSERT INTO pr_cache (repo, prs, fetched_at) VALUES (@repo, @prs, @fetched_at)
-     ON CONFLICT(repo) DO UPDATE SET prs = excluded.prs, fetched_at = excluded.fetched_at`
-  ).run({ repo, prs: JSON.stringify(prs), fetched_at: new Date().toISOString() });
-
-  return prs;
-}
-
-const ORG_SEARCH_QUERY = `
-  query($q: String!, $after: String = null) {
-    search(query: $q, type: ISSUE, first: 100, after: $after) {
-      nodes {
-        ... on PullRequest {
-          number
-          title
-          url
-          updatedAt
-          isDraft
-          additions
-          deletions
-          changedFiles
-          headRefOid
-          headRefName
-          baseRefName
-          reviewDecision
-          latestReviews(first: 50) { nodes { author { login } state } }
-          author { login }
-          labels(first: 20) { nodes { name } }
-          repository { nameWithOwner }
-        }
-      }
-      pageInfo { hasNextPage endCursor }
-    }
-  }
-`;
-
-interface GhSearchPrNode {
-  number: number;
-  title: string;
-  url: string;
-  updatedAt: string;
-  isDraft: boolean;
-  additions: number;
-  deletions: number;
-  changedFiles: number;
-  headRefOid: string;
-  headRefName: string;
-  baseRefName: string;
-  reviewDecision?: string | null;
-  latestReviews: { nodes: { author: { login: string } | null; state: string }[] } | null;
-  author: { login: string } | null;
-  labels: { nodes: { name: string }[] } | null;
-  repository: { nameWithOwner: string };
-}
-
-export async function listOrgPullRequests(org: string, force = false): Promise<PullRequest[]> {
-  const cacheKey = `org:${org}`;
-  const db = getDb();
-
-  if (!force) {
-    const cached = db.prepare("SELECT prs FROM pr_cache WHERE repo = ?").get(cacheKey) as { prs: string } | undefined;
-    if (cached) return JSON.parse(cached.prs) as PullRequest[];
-  }
-
-  const prs: PullRequest[] = [];
-  let after: string | undefined;
-  for (let page = 0; page < 10; page++) {
-    const args = ["api", "graphql", "-f", `query=${ORG_SEARCH_QUERY}`, "-f", `q=org:${org} is:pr is:open`];
-    if (after) args.push("-f", `after=${after}`);
-    const stdout = await runGh(args);
-    const parsed = JSON.parse(stdout) as { data: { search: { nodes: GhSearchPrNode[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } };
-    const { nodes, pageInfo } = parsed.data.search;
-
-    for (const node of nodes) {
-      prs.push({
-        repo: node.repository.nameWithOwner,
-        number: node.number,
-        title: node.title,
-        author: node.author?.login ?? "",
-        url: node.url,
-        updatedAt: node.updatedAt,
-        isDraft: node.isDraft,
-        additions: node.additions,
-        deletions: node.deletions,
-        changedFiles: node.changedFiles,
-        headRefOid: node.headRefOid,
-        baseRefName: node.baseRefName,
-        headRefName: node.headRefName,
-        labels: (node.labels?.nodes ?? []).map((l) => l.name),
-        reviewDecision: normalizeReviewDecision(node.reviewDecision),
-        latestReviews: toLatestReviews(node.latestReviews?.nodes),
-      });
-    }
-
-    if (!pageInfo.hasNextPage || !pageInfo.endCursor) break;
-    after = pageInfo.endCursor;
-  }
-
-  db.prepare(
-    `INSERT INTO pr_cache (repo, prs, fetched_at) VALUES (@repo, @prs, @fetched_at)
-     ON CONFLICT(repo) DO UPDATE SET prs = excluded.prs, fetched_at = excluded.fetched_at`
-  ).run({ repo: cacheKey, prs: JSON.stringify(prs), fetched_at: new Date().toISOString() });
-
-  return prs;
+  return (JSON.parse(stdout) as GhPrListItem[]).map((item) => toPullRequest(repo, item));
 }
 
 export async function fetchPrDiff(repo: string, number: number): Promise<string> {

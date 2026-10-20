@@ -13,6 +13,8 @@ function subscribe(listener: () => void) {
 
 export function reposChanged() {
   invalidateCache("/api/repos");
+  invalidateCache("/api/prs");
+  invalidateCache("/api/freshness");
   version += 1;
   for (const listener of listeners) listener();
 }

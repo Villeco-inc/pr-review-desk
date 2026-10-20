@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "../hooks/useApi";
+import { invalidateCache, useMutation, useQuery } from "../hooks/useApi";
 import { useRepos } from "../hooks/useRepos";
-import type { PullRequestDto, ReviewDto } from "../../../shared/types";
+import { ALL_REPOS } from "../../../shared/types";
+import type { Freshness, PullRequestDto, ReviewDto } from "../../../shared/types";
 import StatusBadge, { MyReviewBadge } from "./StatusBadge";
 import Button from "./ui/Button";
 import Card, { Chip } from "./ui/Card";
@@ -15,6 +16,9 @@ import { formatCount, relativeTime } from "../lib/format";
 import { ShellActions, useRailCount } from "./AppShell";
 import { focusedAttr, moveFocus, useHotkeys } from "../hooks/useHotkeys";
 import { describePrListError } from "../lib/github-errors";
+import { describeFreshness } from "../lib/freshness";
+import { isListLoading } from "../lib/list-state";
+import { useNow } from "../hooks/useNow";
 import { savePrOrder, type PrListSearch, type SortKey, type SortDir } from "../lib/url-state";
 
 const TH = "h-10 whitespace-nowrap bg-subtle px-3 text-left label-caps text-fg-2 edge-b first:pl-4";
@@ -53,6 +57,11 @@ const REVIEW_RANK: Record<PullRequestDto["reviewStatus"], number> = {
 const canStartReview = (pr: PullRequestDto) =>
   pr.reviewStatus === "none" || pr.reviewStatus === "reported" || pr.reviewStatus === "failed";
 
+// The server keeps its cache fresh while the app is open; the page only asks how fresh it is, this often.
+const FRESHNESS_CHECK_MS = 10_000;
+
+const allReposLabel = (count: number) => `All selected repos (${count})`;
+
 export default function PRList({
   search,
   onSearchChange,
@@ -69,7 +78,6 @@ export default function PRList({
   const { data: repos } = useRepos();
   const { data: viewer } = useQuery<{ login: string }>("/api/viewer", [], 5 * 60_000);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [refreshedAt, setRefreshedAt] = useState<string | null>(null);
   const authors = useMemo(() => new Set(search.author ?? []), [search.author]);
   const statuses = useMemo(() => new Set(search.status ?? []), [search.status]);
   const labels = useMemo(() => new Set(search.label ?? []), [search.label]);
@@ -95,10 +103,9 @@ export default function PRList({
     }
   };
 
-  const org = (repos ?? [])[0]?.split("/")[0] ?? "";
-  const knownRepo = (r: string | undefined) => !!r && (r === `org:${org}` || (repos ?? []).includes(r));
+  const knownRepo = (r: string | undefined) => !!r && (r === ALL_REPOS || (repos ?? []).includes(r));
   const repo = repos ? (knownRepo(search.repo) ? search.repo! : repos[0] ?? "") : search.repo ?? "";
-  const isOrgView = repo.startsWith("org:");
+  const isAllView = repo === ALL_REPOS;
 
   // Write the effective repo into the URL once the repo list is known. A remembered repo that is
   // no longer configured is dropped silently, and its replacement brings its own filters.
@@ -109,16 +116,32 @@ export default function PRList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repos, repo, search.repo]);
 
-  const prsKey = repo ? `/api/prs?repo=${encodeURIComponent(repo)}&refresh=${refreshKey > 0}` : null;
-  const { data: prs, dataKey, loading, error } = useQuery<PullRequestDto[]>(
-    prsKey ? `${prsKey}&_=${refreshKey}` : null,
-    [repo, refreshKey]
-  );
-  // Right after a repo switch the previous repo's rows are still in hand for a frame.
-  const prsAreCurrent = !!prs && !loading && dataKey === prsKey;
-  useRailCount("prs", prs?.length);
+  // The cheap question comes first: the list is loaded once its answer is in, and again whenever the
+  // server fetched something new.
+  const freshnessKey = repo ? `/api/freshness?repo=${encodeURIComponent(repo)}` : null;
+  const {
+    data: freshnessData,
+    dataKey: freshnessDataKey,
+    error: freshnessError,
+  } = useQuery<Freshness>(freshnessKey, [repo, refreshKey], 0, FRESHNESS_CHECK_MS);
+  const freshness = freshnessData && freshnessDataKey === freshnessKey ? freshnessData : null;
+  const now = useNow(FRESHNESS_CHECK_MS);
 
-  if (prs && !loading && refreshedAt === null) setRefreshedAt(new Date().toISOString());
+  const prsKey = repo ? `/api/prs?repo=${encodeURIComponent(repo)}` : null;
+  const { data: prs, dataKey, loading: listLoading, error: listError } = useQuery<PullRequestDto[]>(
+    freshness ? prsKey : null,
+    [repo, refreshKey, freshness?.version],
+    0
+  );
+  const error = listError ?? (freshness ? null : freshnessError);
+  // Right after a repo switch the previous repo's rows are still in hand for a frame.
+  const rowsAreCurrent = !!prs && dataKey === prsKey;
+  const loading = isListLoading({ repo, rowsAreCurrent, listLoading, failed: !!error });
+  const prsAreCurrent = rowsAreCurrent && !loading;
+  // The age speaks for the rows on screen: it waits while they reload and while a reload failed.
+  const freshnessText = freshness ? describeFreshness(freshness, now) : null;
+  const freshnessStale = loading || !!listError;
+  useRailCount("prs", prs?.length);
 
   const authorOptions = useMemo(
     () => [...new Set((prs ?? []).map((p) => p.author))].sort().map((a) => ({ value: a, label: a })),
@@ -181,16 +204,33 @@ export default function PRList({
     onSearchChange({ ...search, sort: key, dir: sortKey === key && sortDir === "desc" ? "asc" : "desc" });
   };
 
-  const refresh = () => {
-    setRefreshedAt(null);
+  // Asks GitHub now, then rereads the list. The cache a failed ask leaves behind still shows, dated by freshness.
+  const forceRefresh = useMutation<Freshness>("/api/refresh", "POST");
+  const refresh = async () => {
+    try {
+      await forceRefresh.mutate(undefined, `/api/refresh?repo=${encodeURIComponent(repo)}`);
+    } catch (err) {
+      toast({ kind: "error", message: describePrListError((err as Error).message) });
+    }
+    invalidateCache("/api/prs");
+    invalidateCache("/api/freshness");
     setRefreshKey((k) => k + 1);
   };
+  const refreshing = loading || forceRefresh.loading;
 
   return (
     <main className="flex flex-col gap-5 px-10 pb-10 pt-7">
       <ShellActions>
-        <Button size="sm" onClick={refresh} disabled={loading}>
-          <Icon name="refresh" className={loading ? "animate-spin" : ""} />
+        {freshnessText && (
+          <span
+            className={`font-mono text-xs ${freshness?.error ? "text-danger-ink" : "text-fg-3"} ${freshnessStale ? "invisible" : ""}`}
+            title={freshness?.error ?? undefined}
+          >
+            {freshnessText}
+          </span>
+        )}
+        <Button size="sm" onClick={refresh} disabled={refreshing}>
+          <Icon name="refresh" className={refreshing ? "animate-spin" : ""} />
           Refresh
         </Button>
       </ShellActions>
@@ -201,7 +241,7 @@ export default function PRList({
           <span className="font-mono text-xs text-fg-3">
             {loading
               ? "Refreshing…"
-              : `${sorted.length} open${sorted.length !== (prs?.length ?? 0) ? ` of ${prs?.length ?? 0}` : ""}${running ? ` · ${running} running` : ""}${refreshedAt ? ` · refreshed ${relativeTime(refreshedAt)}` : ""}`}
+              : `${sorted.length} open${sorted.length !== (prs?.length ?? 0) ? ` of ${prs?.length ?? 0}` : ""}${running ? ` · ${running} running` : ""}`}
           </span>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -216,9 +256,7 @@ export default function PRList({
             onChange={(e) => onRepoChange(e.target.value)}
             aria-label="Repository"
           >
-            {org && (
-              <option value={`org:${org}`}>All repos ({org})</option>
-            )}
+            {(repos?.length ?? 0) > 0 && <option value={ALL_REPOS}>{allReposLabel(repos!.length)}</option>}
             {(repos ?? []).map((r) => (
               <option key={r} value={r}>
                 {r}
@@ -247,7 +285,7 @@ export default function PRList({
           <TableSkeleton rows={6} cols={5} />
         ) : sorted.length === 0 && !loading ? (
           <EmptyState
-            repo={isOrgView ? `All repos (${org})` : repo}
+            repo={isAllView ? allReposLabel(repos?.length ?? 0) : repo}
             filtered={(prs?.length ?? 0) > 0}
             onRefresh={refresh}
           />
@@ -257,7 +295,7 @@ export default function PRList({
               <tr>
                 <SortableTh label="#" width="70px" active={sortKey === "number"} dir={sortDir} onClick={() => toggleSort("number")} />
                 <th className={TH}>Title</th>
-                {isOrgView && <th className={`${TH} w-[160px]`}>Repo</th>}
+                {isAllView && <th className={`${TH} w-[160px]`}>Repo</th>}
                 <th className={`${TH} w-[150px]`}>Author</th>
                 <th className={`${TH} w-[120px]`}>My review</th>
                 <th className={`${TH} w-[110px]`}>+ / −</th>
@@ -292,7 +330,7 @@ export default function PRList({
                       {pr.isDraft && <Chip className="shrink-0">Draft</Chip>}
                     </span>
                   </td>
-                  {isOrgView && (
+                  {isAllView && (
                     <td className={`${TD} font-mono text-xs text-fg-3`}>{pr.repo.split("/")[1] ?? pr.repo}</td>
                   )}
                   <td className={TD}>

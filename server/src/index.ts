@@ -3,7 +3,7 @@ import cors from "cors";
 import path from "node:path";
 import fs from "node:fs";
 import { getDb } from "./db/schema";
-import { prsRouter } from "./routes/prs";
+import { prsRouter, startPrRefresh } from "./routes/prs";
 import { selectedRepos } from "./services/repo-selection";
 import { reviewsRouter } from "./routes/reviews";
 import { findingsRouter } from "./routes/findings";
@@ -44,4 +44,5 @@ if (process.env.NODE_ENV === "production") {
 app.listen(port, () => {
   console.log(`pr-review-desk server listening on http://localhost:${port}`);
   console.log(`selected repos: ${selectedRepos(db, process.env.REPOS).join(", ") || "(none yet, pick them in the app)"}`);
+  startPrRefresh();
 });

@@ -22,7 +22,8 @@ export function invalidateCache(prefix: string) {
   }
 }
 
-export function useQuery<T>(url: string | null, deps: unknown[] = [], staleMs = DEFAULT_STALE_MS) {
+/** With `pollMs`, the query reloads quietly on that period while the tab is visible. */
+export function useQuery<T>(url: string | null, deps: unknown[] = [], staleMs = DEFAULT_STALE_MS, pollMs?: number) {
   const key = url ? cacheKey(url) : null;
   const cached = key ? queryCache.get(key) : null;
 
@@ -34,26 +35,40 @@ export function useQuery<T>(url: string | null, deps: unknown[] = [], staleMs = 
   });
   const requestId = useRef(0);
 
-  const refetch = useCallback(() => {
-    if (!url) return;
-    const id = ++requestId.current;
-    setState((prev) => ({ ...prev, loading: true, error: null }));
-    fetchJson<T>(url)
-      .then((data) => {
-        if (requestId.current === id) {
-          const k = cacheKey(url);
-          queryCache.set(k, { data, ts: Date.now() });
-          setState({ data, dataKey: k, loading: false, error: null });
-        }
-      })
-      .catch((err: Error) => {
-        if (requestId.current === id) setState((prev) => ({ ...prev, loading: false, error: err.message }));
-      });
+  const run = useCallback(
+    (quiet: boolean) => {
+      if (!url) return;
+      const id = ++requestId.current;
+      if (!quiet) setState((prev) => ({ ...prev, loading: true, error: null }));
+      fetchJson<T>(url)
+        .then((data) => {
+          if (requestId.current === id) {
+            const k = cacheKey(url);
+            queryCache.set(k, { data, ts: Date.now() });
+            setState({ data, dataKey: k, loading: false, error: null });
+          }
+        })
+        .catch((err: Error) => {
+          // A quiet reload that fails keeps what is on screen; only a deliberate load reports the error.
+          if (requestId.current === id && !quiet) setState((prev) => ({ ...prev, loading: false, error: err.message }));
+        });
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url]);
+    [url]
+  );
+  const refetch = useCallback(() => run(false), [run]);
+
+  useEffect(() => {
+    if (!pollMs || !url) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") run(true);
+    }, pollMs);
+    return () => clearInterval(timer);
+  }, [pollMs, url, run]);
 
   useEffect(() => {
     if (cached && Date.now() - cached.ts < staleMs) {
+      requestId.current += 1; // a reply still in flight belongs to the previous url
       setState({ data: cached.data as T, dataKey: key, loading: false, error: null });
       return;
     }

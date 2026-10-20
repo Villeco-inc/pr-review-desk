@@ -99,6 +99,19 @@ export interface PullRequestDto extends PullRequest {
   postedFindings: number;
 }
 
+/** How current the GitHub data behind a pull request list is. */
+export interface Freshness {
+  /** When the oldest of the repositories in the list was fetched; null while one of them never was. */
+  fetchedAt: string | null;
+  /** The last refresh error among them, until a refresh of that repository succeeds. */
+  error: string | null;
+  /** Changes whenever any of the repositories is fetched again, so a reader holding an older one reloads the list. */
+  version: string;
+}
+
+/** The `repo` value that stands for every selected repository at once. */
+export const ALL_REPOS = "all";
+
 export interface FindingDto {
   id: string;
   reviewId: string;
