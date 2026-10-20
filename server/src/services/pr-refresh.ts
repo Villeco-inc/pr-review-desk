@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { Freshness, PullRequest } from "../../../shared/types";
 
@@ -87,6 +88,22 @@ export function createPrRefresher({
     }
   }
 
+  // What the list shows about reviews comes from the database, not from GitHub: a review starting, ending or
+  // failing, or a finding being posted, must change the version too. The status counts as well, because the
+  // restart that fails stuck reviews does not touch updated_at.
+  function reviewsFingerprint(repos: string[]): string {
+    if (repos.length === 0) return "";
+    const rows = db
+      .prepare(
+        `SELECT r.id, r.status, r.updated_at,
+                (SELECT count(*) FROM findings f WHERE f.review_id = r.id AND f.state = 'open') AS open,
+                (SELECT count(*) FROM findings f WHERE f.review_id = r.id AND f.state = 'posted') AS posted
+           FROM reviews r WHERE r.repo IN (${repos.map(() => "?").join(",")}) ORDER BY r.id`
+      )
+      .all(...repos);
+    return createHash("sha1").update(JSON.stringify(rows)).digest("hex").slice(0, 12);
+  }
+
   function freshness(repos: string[]): Freshness {
     const fetchedAt = repos.map((repo) => {
       const row = db.prepare("SELECT fetched_at FROM pr_cache WHERE repo = ?").get(repo) as { fetched_at: string } | undefined;
@@ -95,7 +112,7 @@ export function createPrRefresher({
     return {
       fetchedAt: repos.length === 0 || fetchedAt.includes(null) ? null : (fetchedAt as string[]).reduce((a, b) => (a < b ? a : b)),
       error: repos.map((repo) => errors.get(repo)).find((e) => e !== undefined) ?? null,
-      version: fetchedAt.map((f) => f ?? "").join("|"),
+      version: `${fetchedAt.map((f) => f ?? "").join("|")}#${reviewsFingerprint(repos)}`,
     };
   }
 

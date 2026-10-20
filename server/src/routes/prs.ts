@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { getDb } from "../db/schema";
 import { fetchPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } from "../services/github";
 import { createPrRefresher } from "../services/pr-refresh";
-import { saveSelectedRepos, scopeOf, selectedRepos } from "../services/repo-selection";
+import { isRepoName, saveSelectedRepos, scopeOf, selectedRepos } from "../services/repo-selection";
 import { reviewId } from "../services/review-engine";
 import type { FindingRow, MyReviewState, PullRequest, PullRequestDto, ReviewRow } from "../../../shared/types";
 
@@ -137,6 +137,10 @@ prsRouter.get("/freshness", (req, res) => {
 prsRouter.get("/prs/:owner/:name/:number", async (req, res) => {
   const repo = `${req.params.owner}/${req.params.name}`;
   const num = Number(req.params.number);
+  if (!isRepoName(repo)) {
+    res.status(400).json({ error: "repo must be owner/name" });
+    return;
+  }
   if (!Number.isFinite(num)) {
     res.status(400).json({ error: "invalid PR number" });
     return;

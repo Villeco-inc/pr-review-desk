@@ -4,6 +4,7 @@ import { reviewEvents, reviewId, startReview, getThreadLog } from "../services/r
 import { splitUnifiedDiff, findPatchForFile } from "../services/diff-utils";
 import { toFindingDto, toReviewDto } from "../services/dto";
 import { getRunSession, listRuns } from "../services/run-log";
+import { isRepoName } from "../services/repo-selection";
 import type { FindingRow, ReviewEvent, ReviewRow } from "../../../shared/types";
 
 export const reviewsRouter = Router();
@@ -36,6 +37,11 @@ reviewsRouter.post("/reviews", async (req, res) => {
   if (!repo || !Number.isFinite(number)) {
     rlog("POST /reviews 400: missing repo or number");
     res.status(400).json({ error: "repo and number are required" });
+    return;
+  }
+  if (!isRepoName(repo)) {
+    rlog("POST /reviews 400: repo is not owner/name");
+    res.status(400).json({ error: "repo must be owner/name" });
     return;
   }
 
@@ -123,6 +129,10 @@ reviewsRouter.post("/reviews/:owner/:name/:number/submit", async (req, res) => {
   const { event, body } = req.body as { event?: string; body?: string };
   rlog(`POST submit ${repo}#${num} event=${event}`);
 
+  if (!isRepoName(repo)) {
+    res.status(400).json({ error: "repo must be owner/name" });
+    return;
+  }
   if (event !== "APPROVE" && event !== "REQUEST_CHANGES" && event !== "COMMENT") {
     res.status(400).json({ error: 'event must be "APPROVE", "REQUEST_CHANGES" or "COMMENT"' });
     return;

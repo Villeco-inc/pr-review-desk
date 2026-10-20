@@ -331,6 +331,49 @@ describe("pull request cache", () => {
     expect(gh.calls).toEqual([repo]);
   });
 
+  it("changes its version when a review of the repository changes status or gets findings handled, and only then", async () => {
+    const repo = "Villeco-inc/linea-web";
+    const db = openDb();
+    const refresher = createPrRefresher({
+      db,
+      fetchPrs: fakeGithub().fetchPrs,
+      selected: () => [],
+      now: () => Date.parse("2026-10-15T12:00:00Z"),
+    });
+    const version = () => refresher.freshness([repo]).version;
+    const addReview = (id: string, forRepo: string) =>
+      db.prepare("INSERT INTO reviews (id, repo, number, status, created_at, updated_at) VALUES (?, ?, 1, 'running', 't', 't')").run(id, forRepo);
+
+    await refresher.list([repo]);
+    const none = version();
+    expect(version()).toBe(none);
+
+    addReview("other", "Villeco-inc/linea-mobile");
+    expect(version()).toBe(none);
+
+    addReview("r1", repo);
+    const started = version();
+    expect(started).not.toBe(none);
+
+    db.prepare("UPDATE reviews SET status = 'failed' WHERE id = 'r1'").run();
+    const failed = version();
+    expect(failed).not.toBe(started);
+
+    db.prepare("INSERT INTO findings (id, review_id, state) VALUES ('f1', 'r1', 'open')").run();
+    const found = version();
+    expect(found).not.toBe(failed);
+
+    db.prepare("UPDATE findings SET state = 'posted' WHERE id = 'f1'").run();
+    const posted = version();
+    expect(posted).not.toBe(found);
+    expect(version()).toBe(posted);
+
+    db.prepare("INSERT INTO findings (id, review_id, state) VALUES ('f2', 'r1', 'dismissed')").run();
+    expect(version()).toBe(posted);
+    db.prepare("UPDATE findings SET state = 'posted' WHERE id = 'f2'").run();
+    expect(version()).not.toBe(posted);
+  });
+
   it("keeps the recorded error when the fetched list cannot be stored", async () => {
     const repo = "Villeco-inc/linea-web";
     let attempt = 0;
