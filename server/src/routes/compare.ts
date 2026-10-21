@@ -4,6 +4,7 @@ import { fetchCompare, fetchRepoRefs } from "../services/github";
 import { compareIdentity, reviewId, startCompareReview } from "../services/review-engine";
 import { splitUnifiedDiff } from "../services/diff-utils";
 import { toFindingDto, toReviewDto } from "../services/dto";
+import { selectedRepoNamed } from "../services/repo-selection";
 import { configuredRepos } from "./prs";
 import type { FindingRow, ReviewRow } from "../../../shared/types";
 
@@ -11,8 +12,7 @@ export const compareRouter = Router();
 
 /** Only the configured repos: this route shells out to gh with the user's token. */
 function knownRepo(value: unknown): string | null {
-  const repo = String(value ?? "");
-  return configuredRepos().includes(repo) ? repo : null;
+  return selectedRepoNamed(String(value ?? ""), configuredRepos());
 }
 
 const fail = (res: import("express").Response, err: unknown) =>

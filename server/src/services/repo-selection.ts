@@ -52,6 +52,12 @@ export function scopeOf(repo: string, selected: string[]): string[] | null {
   return found === undefined ? null : [found];
 }
 
+/** A single selected repository, under the spelling of the selection; null for anything else, "all" included. */
+export function selectedRepoNamed(repo: string, selected: string[]): string | null {
+  if (repo === ALL_REPOS) return null;
+  return scopeOf(repo, selected)?.[0] ?? null;
+}
+
 /** Saves the pick and returns the repositories it added to the one saved before. */
 export function saveSelectedRepos(db: Database.Database, repos: string[]): string[] {
   if (repos.length === 0) throw new Error("Pick at least one repository");

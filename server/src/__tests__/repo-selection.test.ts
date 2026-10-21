@@ -4,7 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { migrate } from "../db/schema";
-import { isRepoName, parseRepoList, saveSelectedRepos, scopeOf, selectedRepos } from "../services/repo-selection";
+import { isRepoName, parseRepoList, saveSelectedRepos, scopeOf, selectedRepoNamed, selectedRepos } from "../services/repo-selection";
 
 const dirs: string[] = [];
 
@@ -107,6 +107,15 @@ describe("selected repositories", () => {
     expect(saveSelectedRepos(db, ["Villeco-inc/linea-web", "villeco-inc/Linea-Web"])).toEqual(["Villeco-inc/linea-web"]);
     expect(selectedRepos(db, undefined)).toEqual(["Villeco-inc/linea-web"]);
     expect(saveSelectedRepos(db, ["VILLECO-INC/LINEA-WEB", "Villeco-inc/linea-mobile"])).toEqual(["Villeco-inc/linea-mobile"]);
+  });
+
+  it("names a selected repository by its selected spelling, and never answers for all", () => {
+    const selection = ["Villeco-inc/Linea-Web", "Villeco-inc/linea-mobile"];
+    expect(selectedRepoNamed("villeco-inc/linea-web", selection)).toBe("Villeco-inc/Linea-Web");
+    expect(selectedRepoNamed("Villeco-inc/linea-mobile", selection)).toBe("Villeco-inc/linea-mobile");
+    expect(selectedRepoNamed("Villeco-inc/other", selection)).toBeNull();
+    expect(selectedRepoNamed("all", selection)).toBeNull();
+    expect(selectedRepoNamed("", selection)).toBeNull();
   });
 
   it("reads 'all' as nothing when nothing is selected", () => {
