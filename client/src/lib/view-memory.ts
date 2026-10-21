@@ -47,9 +47,6 @@ export async function loadViewMemory(timeoutMs = LOAD_TIMEOUT_MS): Promise<void>
 
 const own = (fields: Record<string, Fields>, key: string): Fields | undefined => (Object.hasOwn(fields, key) ? fields[key] : undefined);
 
-/** The same fields whatever the order of their keys. */
-const same = (a: Fields | undefined, b: Fields): boolean => !!a && JSON.stringify(a, Object.keys(a).sort()) === JSON.stringify(b, Object.keys(b).sort());
-
 // Writes wait for the changes to stop, then go out one after the other in the order of the visits, so
 // the server ends on the last repository looked at; a batch never starts before the previous one is
 // done. A write that fails costs nothing but the memory.
@@ -93,8 +90,9 @@ export const prsMemory = {
   filters: (repo: string): Fields | undefined => own(memory.prs.filters, repo),
   remember(repo: string, filters: object): void {
     if (repo === "__proto__") return;
+    // Always sent, even when this tab's copy already holds it: that copy may be older than the server's, and
+    // the last tab to act must win. The server does not write what it already holds.
     const fields = filters as Fields;
-    if (memory.prs.repo === repo && same(own(memory.prs.filters, repo), fields)) return;
     memory.prs.repo = repo;
     memory.prs.filters[repo] = fields;
     queue(`prs:${repo}`, write("/api/view-memory/prs", "PUT", { repo, filters: fields }));

@@ -47,11 +47,12 @@ function load(db: Database.Database): ViewMemory {
   }
 }
 
+/** Writes the memory unless the row already holds exactly this: every page restoring its own view sends it again. */
 function save(db: Database.Database, memory: ViewMemory): void {
-  db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(
-    KEY,
-    JSON.stringify(memory)
-  );
+  const value = JSON.stringify(memory);
+  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(KEY) as { value: string } | undefined;
+  if (row?.value === value) return;
+  db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(KEY, value);
 }
 
 // A local repository is named by a label from LOCAL_REPOS, written freely by the user: accents and spaces

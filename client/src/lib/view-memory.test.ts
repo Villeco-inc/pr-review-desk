@@ -103,18 +103,14 @@ describe("remembering a pull request view", () => {
     expect(prsMemory.repo()).toBe(web);
   });
 
-  it("does not send what it already holds, as when a page restores its own view", async () => {
+  it("sends what it already holds too, so the last tab to act wins over what another tab wrote since", async () => {
     stubNetwork(() => ok({ prs: { repo: web, filters: { [web]: { author: ["bob"], sort: "updated" } } }, local: { label: null, selection: {} } }));
     await loadViewMemory();
     const calls = stubNetwork(() => ok(null));
 
     prsMemory.remember(web, { sort: "updated", author: ["bob"] });
     await vi.advanceTimersByTimeAsync(500);
-    expect(calls).toEqual([]);
-
-    prsMemory.remember(web, { author: ["bob"] });
-    await vi.advanceTimersByTimeAsync(500);
-    expect(calls).toEqual([put(web, { author: ["bob"] })]);
+    expect(calls).toEqual([put(web, { sort: "updated", author: ["bob"] })]);
   });
 });
 

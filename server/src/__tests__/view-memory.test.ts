@@ -91,6 +91,36 @@ describe("view memory, pull request list", () => {
   });
 });
 
+describe("view memory, writes", () => {
+  const web = "Villeco-inc/linea-web";
+  const writes = (db: Database.Database) => (db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+
+  it("does not write again what it already holds, and writes what differs", () => {
+    const db = openDb();
+    rememberPrView(db, SELECTION, web, { author: ["bob"] });
+    const before = writes(db);
+
+    rememberPrView(db, SELECTION, web, { author: ["bob"] });
+    expect(writes(db)).toBe(before);
+
+    rememberPrView(db, SELECTION, web, { author: ["bob", "eve"] });
+    expect(writes(db)).toBe(before + 1);
+  });
+
+  it("does not write again a local selection it already holds, nor the forgetting of one it never had", () => {
+    const db = openDb();
+    rememberLocalSelection(db, "api", { branch: "feat/x", base: "main" });
+    const before = writes(db);
+
+    rememberLocalSelection(db, "api", { branch: "feat/x", base: "main" });
+    forgetLocalSelection(db, "unknown");
+    expect(writes(db)).toBe(before);
+
+    forgetLocalSelection(db, "api");
+    expect(writes(db)).toBe(before + 1);
+  });
+});
+
 describe("view memory, local branches", () => {
   it("remembers the last local repository, and each one's own branch pair", () => {
     const db = openDb();
