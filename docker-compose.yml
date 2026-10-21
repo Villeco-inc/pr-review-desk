@@ -11,9 +11,11 @@ services:
     environment:
       - PORT=3100
       - NODE_ENV=production
+      - SCAN_DIR=${SCAN_DIR:-}                          # folder of checkouts to discover repos in, relative to REPOS_ROOT
       - REPOS=${REPOS:-}                                # optional: repositories are picked in the app
       - LOCAL_REPOS=${LOCAL_REPOS:-}
       - LOCAL_REPOS_ROOT=/repos
+      - HOST_REPOS_ROOT=${REPOS_ROOT:-${HOME}/Documents}   # to find worktrees, which git records by host path
       - GH_TOKEN=${GH_TOKEN:-}                          # set by ./start.sh from gh; a value in .env also works
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:?CLAUDE_CODE_OAUTH_TOKEN is not set in .env - run ./start.sh}
     restart: unless-stopped

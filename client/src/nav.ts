@@ -1,11 +1,21 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { reviewRepoSegment, type LocalSearch } from "./lib/url-state";
+import { compareRepoSegment, reviewRepoSegment, type CompareSearch, type LocalSearch } from "./lib/url-state";
+import type { ActivitySearch } from "./components/ActivityView";
 
 const splitRepo = (repo: string) => {
   const i = repo.indexOf("/");
   return { owner: repo.slice(0, i), repo: repo.slice(i + 1) };
 };
+
+/** A compare review: `repo` is the review's own id (`compare/<name>-<hash>`), `ghRepo` the GitHub repo. */
+export interface CompareReviewRef {
+  repo: string;
+  number: number;
+  ghRepo: string;
+  base: string;
+  head: string;
+}
 
 export interface LocalReviewRef {
   repo: string;
@@ -47,6 +57,29 @@ export function useGo() {
           to: "/local/$label/reviews/$reviewRepo/$number/runs/$runId",
           params: { label: repoLabel, reviewRepo: reviewRepoSegment(repo), number: String(number), runId },
           search: { branch, base },
+          ...opts,
+        }),
+      activity: (search: ActivitySearch = {}, opts: { replace?: boolean } = {}) => navigate({ to: "/activity", search, ...opts }),
+      compareList: () => navigate({ to: "/compare" }),
+      compare: (ghRepo: string, search: CompareSearch, opts: { replace?: boolean } = {}) =>
+        navigate({ to: "/compare/$owner/$repo", params: splitRepo(ghRepo), search, ...opts }),
+      compareReview: ({ repo, number, ghRepo, base, head }: CompareReviewRef) =>
+        navigate({
+          to: "/compare/$owner/$repo/reviews/$reviewRepo/$number",
+          params: { ...splitRepo(ghRepo), reviewRepo: compareRepoSegment(repo), number: String(number) },
+          search: { base, head },
+        }),
+      compareFinding: ({ repo, number, ghRepo, base, head }: CompareReviewRef, findingId: string) =>
+        navigate({
+          to: "/compare/$owner/$repo/reviews/$reviewRepo/$number/findings/$findingId",
+          params: { ...splitRepo(ghRepo), reviewRepo: compareRepoSegment(repo), number: String(number), findingId },
+          search: { base, head },
+        }),
+      compareSession: ({ repo, number, ghRepo, base, head }: CompareReviewRef, runId: string, opts: { replace?: boolean } = {}) =>
+        navigate({
+          to: "/compare/$owner/$repo/reviews/$reviewRepo/$number/runs/$runId",
+          params: { ...splitRepo(ghRepo), reviewRepo: compareRepoSegment(repo), number: String(number), runId },
+          search: { base, head },
           ...opts,
         }),
     }),

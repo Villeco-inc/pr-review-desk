@@ -170,6 +170,22 @@ export interface ReviewEvent {
   data: unknown;
 }
 
+/** The screen a review opens on, so a notification can lead back to it. */
+export type ReviewTarget =
+  | { kind: "pr"; repo: string; number: number }
+  | { kind: "local"; repo: string; number: number; repoLabel: string; branch: string; base: string }
+  | { kind: "compare"; repo: string; number: number; ghRepo: string; base: string; head: string };
+
+/** A review that just finished or failed, pushed to every open tab. */
+export interface ReviewOutcome {
+  reviewId: string;
+  status: "reported" | "failed";
+  title: string;
+  findings?: number;
+  error?: string;
+  target: ReviewTarget | null;
+}
+
 /** One execution of the review agent. A review keeps every run; the latest one produced its findings. */
 export interface ReviewRunRow {
   id: string;
@@ -178,6 +194,11 @@ export interface ReviewRunRow {
   model: string | null;
   effort: string | null;
   max_turns: number | null;
+  effort_level: string | null;
+  diff_files: number | null;
+  sent_files: number | null;
+  omitted_files: string;
+  truncated_files: string;
   skills: string;
   prompt_chars: number;
   session_id: string | null;
@@ -200,6 +221,13 @@ export interface ReviewRunDto {
   model: string | null;
   effort: string | null;
   maxTurns: number | null;
+  /** claude --effort level; null on runs from before effort replaced the turn cap. */
+  effortLevel: string | null;
+  /** Files in the change, and how many of them the agent was sent; null on older runs. */
+  diffFiles: number | null;
+  sentFiles: number | null;
+  omittedFiles: { path: string; reason: string; chars: number }[];
+  truncatedFiles: { path: string; chars: number; keptChars: number }[];
   skills: string[];
   promptChars: number;
   sessionId: string | null;
@@ -222,4 +250,34 @@ export interface RunSessionDto {
   /** The raw `claude -p --output-format stream-json` events, in order, unmodified. */
   events: unknown[];
   stderr: string;
+}
+
+/** What a local review of a branch would read. */
+export interface LocalDiffSummaryDto {
+  baseRef: string;
+  ownCommits: number;
+  uncommittedFiles: number;
+  worktree: string | null;
+  files: number;
+}
+
+export interface ProductionRefDto {
+  tag: string;
+  source: "deployment" | "latest-tag";
+  deployedAt: string | null;
+}
+
+export interface RepoRefsDto {
+  defaultBranch: string;
+  branches: string[];
+  tags: string[];
+  production: ProductionRefDto | null;
+}
+
+export interface CompareSummaryDto {
+  truncated: boolean;
+  aheadBy: number;
+  behindBy: number;
+  commits: { sha: string; message: string; author: string }[];
+  files: { path: string; additions: number; deletions: number }[];
 }

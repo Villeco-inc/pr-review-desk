@@ -5,6 +5,9 @@ import { router } from "./router";
 import { SystemProvider } from "./components/SystemProvider";
 import { loadViewMemory } from "./lib/view-memory";
 import "./index.css";
+import { startTelemetry } from "./lib/telemetry";
+
+startTelemetry();
 
 const container = document.getElementById("root");
 if (!container) throw new Error("Root element not found");

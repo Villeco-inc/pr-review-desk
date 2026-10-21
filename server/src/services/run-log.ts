@@ -7,6 +7,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getDb } from "../db/schema";
 import type { ReviewRunDto, ReviewRunRow, RunSessionDto } from "../../../shared/types";
+import type { DiffScope } from "./diff-scope";
 
 const RUNS_DIR = path.join(process.cwd(), "data", "runs");
 const PROMPT = "prompt.txt";
@@ -50,16 +51,34 @@ export function statsFromEvent(event: unknown): RunStats {
   };
 }
 
-export function createRun(reviewId: string, prompt: string, opts: { model?: string; effort?: string; maxTurns: number; skills: string[] }): string {
+export function createRun(
+  reviewId: string,
+  prompt: string,
+  opts: { model?: string; effort?: string; effortLevel: string; skills: string[]; scope: DiffScope }
+): string {
   const id = randomUUID();
   fs.mkdirSync(runDir(id), { recursive: true });
   fs.writeFileSync(path.join(runDir(id), PROMPT), prompt);
+  const { scope } = opts;
   getDb()
     .prepare(
-      `INSERT INTO review_runs (id, review_id, status, model, effort, max_turns, skills, prompt_chars, started_at)
-       VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO review_runs (id, review_id, status, model, effort, effort_level, skills, prompt_chars, diff_files, sent_files, omitted_files, truncated_files, started_at)
+       VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, reviewId, opts.model ?? null, opts.effort ?? null, opts.maxTurns, JSON.stringify(opts.skills), prompt.length, new Date().toISOString());
+    .run(
+      id,
+      reviewId,
+      opts.model ?? null,
+      opts.effort ?? null,
+      opts.effortLevel,
+      JSON.stringify(opts.skills),
+      prompt.length,
+      scope.sentFiles + scope.omitted.length,
+      scope.sentFiles,
+      JSON.stringify(scope.omitted),
+      JSON.stringify(scope.truncated),
+      new Date().toISOString()
+    );
   return id;
 }
 
@@ -109,6 +128,11 @@ function toRunDto(row: ReviewRunRow): ReviewRunDto {
     model: row.model,
     effort: row.effort,
     maxTurns: row.max_turns,
+    effortLevel: row.effort_level,
+    diffFiles: row.diff_files,
+    sentFiles: row.sent_files,
+    omittedFiles: JSON.parse(row.omitted_files || "[]"),
+    truncatedFiles: JSON.parse(row.truncated_files || "[]"),
     skills: JSON.parse(row.skills || "[]"),
     promptChars: row.prompt_chars,
     sessionId: row.session_id,

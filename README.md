@@ -40,14 +40,20 @@ curl -fsSL https://claude.ai/install.sh | bash    # Claude Code
 ./start.sh
 ```
 
-## Reviewing local branches (optional)
+## Which repositories (optional)
 
-To review a branch that has no PR yet, point the app at the folder holding your checkouts. Docker mounts it read-only at `/repos`.
+Point the app at the folder where your checkouts live. Docker mounts it read-only at `/repos`.
 
 ```bash
-REPOS_ROOT=/Users/me/code                    # absolute path, defaults to ~/Documents
-LOCAL_REPOS=api=my-org/api,web=my-org/web    # label=path relative to REPOS_ROOT
+REPOS_ROOT=/Users/me/code    # absolute path, defaults to ~/Documents
+SCAN_DIR=my-org              # relative to REPOS_ROOT: /Users/me/code/my-org/<each repo>
 ```
+
+Every subfolder of `SCAN_DIR` with a `.git` becomes a local repo, named after its folder, in **Local branches**. The folder is read again every 30 seconds: clone a repo there and it appears, no restart. Until you pick repositories in the app, the GitHub repo of each one's `origin` also joins the PR list. Hidden folders, worktrees and folders without a GitHub `origin` are left out of it.
+
+For checkouts outside that folder, add them by hand: `LOCAL_REPOS=label=relative/path,…`.
+
+### Reviewing local branches
 
 The review compares **commits**: `base...branch` in that checkout. Work that is not committed yet, or that only lives in another worktree, is not part of the diff. An empty diff gives a review with no findings.
 
@@ -59,7 +65,8 @@ The review compares **commits**: `base...branch` in that checkout. Work that is 
 | `REPOS` | no | none | Starting pick of repositories for an existing install, until you pick them in the app |
 | `GH_TOKEN` | no | from `gh` | Lists PRs and posts comments **as you**. `./start.sh` sets it; only needed in `.env` to start with `docker compose up` directly |
 | `REPOS_ROOT` | no | `~/Documents` | Folder with your local checkouts |
-| `LOCAL_REPOS` | no | none | Local checkouts to offer, `label=relative/path` |
+| `SCAN_DIR` | no | none | Folder of checkouts, relative to `REPOS_ROOT`, scanned for repos |
+| `LOCAL_REPOS` | no | none | Extra local checkouts, `label=relative/path,…` |
 | `HOST_PORT` | no | `37703` | Port the app is served on |
 | `PORT` | no | `3100` | Port of the server in dev mode |
 
@@ -113,6 +120,7 @@ Nothing to migrate by hand: the database schema is completed at startup.
 - The app is served on `127.0.0.1` only. It holds your GitHub token and posts comments in your name, so it must not be reachable from the network.
 - `.env` holds your Claude token and is git-ignored. Never commit it. It is not copied into the Docker image.
 - Local checkouts are mounted read-only.
+- The server answers only requests addressed to `localhost`, and refuses changes sent by any other website open in your browser.
 
 ## Troubleshooting
 
@@ -123,8 +131,8 @@ Nothing to migrate by hand: the database schema is completed at startup.
 | PR list says *GitHub is not authenticated* | The token is missing or expired. Run `./start.sh` again: it reads a fresh token from `gh`, and logs you in if needed |
 | The PR list is missing a repository | Add it from **Repositories** in the left rail |
 | A review fails right away | Open its **Session**: the stderr panel shows the Claude error. Usually `CLAUDE_CODE_OAUTH_TOKEN` is missing or expired: delete its line in `.env`, then run `./start.sh` |
-| Local branches list is empty | `LOCAL_REPOS` is empty, or its paths are wrong relative to `REPOS_ROOT` |
-| A local review finds nothing | The branch has no commits beyond its base. Commit the work first (see [Reviewing local branches](#reviewing-local-branches-optional)) |
+| Local branches list is empty | `SCAN_DIR` and `LOCAL_REPOS` are empty, or its paths are wrong relative to `REPOS_ROOT` |
+| A local review finds nothing | The branch has no commits beyond its base. Commit the work first (see [Reviewing local branches](#reviewing-local-branches)) |
 | `./start.sh` says the port is already in use | Another app holds it, often a second install of pr-review-desk. Add the `HOST_PORT=…` it suggests to `.env`, then run `./start.sh` again |
 
 Logs: `docker compose logs -f app`.

@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { useQuery } from "../hooks/useApi";
+import { useMutation, useQuery } from "../hooks/useApi";
 import type { ReviewRunDto, RunSessionDto } from "../../../shared/types";
 import StatusBadge from "./StatusBadge";
 import Button from "./ui/Button";
@@ -8,6 +8,7 @@ import { Select } from "./ui/Field";
 import Icon from "./ui/Icon";
 import { CardSkeleton } from "./ui/Skeleton";
 import NotFound from "./ui/NotFound";
+import { useToast } from "./ui/Toast";
 import { ShellActions } from "./AppShell";
 import { formatCount, relativeTime } from "../lib/format";
 import { useHotkeys } from "../hooks/useHotkeys";
@@ -84,7 +85,8 @@ export default function RunSession({
             </div>
             <dl className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] edge-t">
               <Stat label="Model" value={run.model ?? "default"} />
-              <Stat label="Effort" value={run.effort ? `${run.effort} · ${run.maxTurns ?? "?"} turns max` : "—"} />
+              <Stat label="Effort" value={run.effort ? `${run.effort} · ${run.effortLevel ? `${run.effortLevel} effort` : `${run.maxTurns ?? "?"} turns max`}` : "—"} />
+              <Stat label="Files sent" value={run.sentFiles != null && run.diffFiles != null ? `${run.sentFiles} of ${run.diffFiles}` : "—"} />
               <Stat label="Turns" value={run.numTurns ?? "—"} />
               <Stat label="Duration" value={run.durationMs != null ? formatDuration(run.durationMs) : running ? "running…" : "—"} />
               <Stat label="Tokens in / out" value={run.inputTokens != null ? `${formatCount(run.inputTokens)} / ${formatCount(run.outputTokens ?? 0)}` : "—"} />
@@ -102,6 +104,23 @@ export default function RunSession({
               </div>
             )}
           </Card>
+
+          {(run.omittedFiles.length > 0 || run.truncatedFiles.length > 0) && (
+            <Collapsible title="Not read in full" meta={`${run.omittedFiles.length} omitted · ${run.truncatedFiles.length} cut`} open>
+              <ul className="flex flex-col gap-1 px-5 py-3.5 font-mono text-xs text-fg-2">
+                {run.omittedFiles.map((f) => (
+                  <li key={f.path}>
+                    <span className="text-fg">{f.path}</span> — omitted ({f.reason}, {formatCount(f.chars)} chars)
+                  </li>
+                ))}
+                {run.truncatedFiles.map((f) => (
+                  <li key={f.path}>
+                    <span className="text-fg">{f.path}</span> — cut: first {formatCount(f.keptChars)} of {formatCount(f.chars)} chars sent
+                  </li>
+                ))}
+              </ul>
+            </Collapsible>
+          )}
 
           <Collapsible title="Prompt" meta={`${formatCount(run.promptChars)} chars`}>
             <Pre>{session.prompt || "(the prompt was not recorded)"}</Pre>
@@ -295,5 +314,57 @@ export function SessionButton({ repo, number, status, onOpen }: { repo: string; 
       Session
       {runs.length > 1 && <Chip mono>{runs.length}</Chip>}
     </Button>
+  );
+}
+
+/**
+ * A review that failed on an unreadable report can be read again from the saved answer of its
+ * latest run, with the current parser — no new Claude call, no cost.
+ */
+export function ReimportButton({ repo, number, error, onDone }: { repo: string; number: number; error: string | null; onDone: () => void }) {
+  const { data: runs } = useQuery<ReviewRunDto[]>(`/api/reviews/${repo}/${number}/runs`, [repo, number, error]);
+  const reimport = useMutation<{ findings: number }>("__reimport__", "POST");
+  const { toast } = useToast();
+  const latest = runs?.[0];
+  if (!latest || !error || !/invalid JSON|no JSON report/.test(error)) return null;
+  return (
+    <Button
+      size="sm"
+      variant="acid"
+      disabled={reimport.loading}
+      title="Reads the agent's saved answer again with the current parser. No new run, no cost."
+      onClick={async () => {
+        try {
+          const res = await reimport.mutate({}, `/api/runs/${latest.id}/reimport`);
+          toast({ kind: "success", message: `Report read again: ${res.findings} finding${res.findings === 1 ? "" : "s"}` });
+          onDone();
+        } catch (err) {
+          toast({ kind: "error", message: `Still unreadable: ${(err as Error).message}` });
+        }
+      }}
+    >
+      <Icon name="refresh" />
+      Read the report again
+    </Button>
+  );
+}
+
+/** Says when the latest run did not read every file of the change in full. */
+export function ScopeNote({ repo, number, status, onOpen }: { repo: string; number: number; status?: string; onOpen: (runId: string) => void }) {
+  const { data: runs } = useQuery<ReviewRunDto[]>(`/api/reviews/${repo}/${number}/runs`, [repo, number, status]);
+  const latest = runs?.[0];
+  if (!latest || (latest.omittedFiles.length === 0 && latest.truncatedFiles.length === 0)) return null;
+  const parts = [
+    latest.omittedFiles.length > 0 && `${latest.omittedFiles.length} file${latest.omittedFiles.length > 1 ? "s" : ""} left out (${[...new Set(latest.omittedFiles.map((f) => f.reason))].join(", ")})`,
+    latest.truncatedFiles.length > 0 && `${latest.truncatedFiles.length} file${latest.truncatedFiles.length > 1 ? "s" : ""} cut to ${formatCount(latest.truncatedFiles[0].keptChars)} chars`,
+  ].filter(Boolean);
+  return (
+    <div className="flex items-center gap-2 edge-t bg-acid-soft px-5 py-2.5 text-xs text-fg">
+      <Icon name="alert" className="size-3.5 text-fg-3" />
+      <span>Not read in full: {parts.join(" · ")}.</span>
+      <button type="button" className="font-bold underline hover:bg-acid hover:text-acid-fg focus-ring" onClick={() => onOpen(latest.id)}>
+        See which
+      </button>
+    </div>
   );
 }

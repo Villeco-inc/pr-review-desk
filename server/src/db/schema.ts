@@ -89,6 +89,14 @@ export function migrate(database: Database.Database): void {
   `);
 }
 
+/** CREATE TABLE IF NOT EXISTS leaves existing tables alone: columns added later go through here. Additive only. */
+function addMissingColumns(database: Database.Database, table: string, columns: Record<string, string>): void {
+  const existing = new Set((database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name));
+  for (const [name, type] of Object.entries(columns)) {
+    if (!existing.has(name)) database.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  }
+}
+
 export function getDb(): Database.Database {
   if (instance) return instance;
 
@@ -97,5 +105,12 @@ export function getDb(): Database.Database {
 
   instance = new Database(DB_PATH);
   migrate(instance);
+  addMissingColumns(instance, "review_runs", {
+    effort_level: "TEXT",
+    diff_files: "INTEGER",
+    sent_files: "INTEGER",
+    omitted_files: "TEXT NOT NULL DEFAULT '[]'",
+    truncated_files: "TEXT NOT NULL DEFAULT '[]'",
+  });
   return instance;
 }

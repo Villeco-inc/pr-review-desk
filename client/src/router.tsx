@@ -10,11 +10,19 @@ import FindingDetail from "./components/FindingDetail";
 import LocalBranches from "./components/LocalBranches";
 import LocalReviewDetail from "./components/LocalReviewDetail";
 import RunSession from "./components/RunSession";
+import CompareView from "./components/CompareView";
+import ActivityView, { type ActivitySearch } from "./components/ActivityView";
+import { useQuery } from "./hooks/useApi";
 import NotFound from "./components/ui/NotFound";
 import { useGo } from "./nav";
 import {
+  compareRepoFromSegment,
   forgetLocalRepo,
   isEmptySearch,
+  loadCompareHead,
+  rememberedCompareRepo,
+  saveCompare,
+  validateCompareSearch,
   loadLocalSelection,
   loadPrFilters,
   parseSearch,
@@ -26,9 +34,11 @@ import {
   stringifySearch,
   validateLocalSearch,
   validatePrListSearch,
+  type CompareSearch,
   type LocalSearch,
   type PrListSearch,
 } from "./lib/url-state";
+import type { CompareReviewRef } from "./nav";
 
 const rootRoute = createRootRoute({ component: App, notFoundComponent: UnknownPath });
 
@@ -262,6 +272,161 @@ function LocalSessionPage() {
   );
 }
 
+// ── Compare ───────────────────────────────────────────────────────────────────
+
+const compareIndexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/compare",
+  // A bare /compare goes back to the last repo compared, with its head.
+  beforeLoad: () => {
+    const repo = rememberedCompareRepo();
+    if (!repo) return;
+    const [owner, name] = repo.split("/");
+    throw redirect({ to: "/compare/$owner/$repo", params: { owner, repo: name }, search: { head: loadCompareHead(repo) }, replace: true });
+  },
+  component: CompareIndexPage,
+});
+
+function CompareIndexPage() {
+  const { data: repos } = useQuery<string[]>("/api/repos");
+  const go = useGo();
+  const first = repos?.find((r) => !r.startsWith("org:"));
+  useEffect(() => {
+    if (first) go.compare(first, {}, { replace: true });
+  }, [first, go]);
+  if (repos && !first) return <NotFound title="No repository configured" detail="Set REPOS in .env." backLabel="Back to pull requests" onBack={go.prList} />;
+  return null;
+}
+
+const compareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/compare/$owner/$repo",
+  validateSearch: validateCompareSearch,
+  component: ComparePage,
+});
+
+function ComparePage() {
+  const params = compareRoute.useParams();
+  const search = compareRoute.useSearch();
+  const go = useGo();
+  const repo = `${params.owner}/${params.repo}`;
+  return (
+    <CompareView
+      key={repo}
+      repo={repo}
+      search={search}
+      onRepoChange={(r) => go.compare(r, { head: loadCompareHead(r) }, { replace: true })}
+      onSearchChange={(next) => go.compare(repo, next, { replace: true })}
+      onRemember={saveCompare}
+      onSelectReview={go.compareReview}
+      onBackToList={go.compareList}
+    />
+  );
+}
+
+function compareReviewRef(params: { owner: string; repo: string; reviewRepo: string; number: string }, search: CompareSearch): CompareReviewRef {
+  return {
+    repo: compareRepoFromSegment(params.reviewRepo),
+    number: Number(params.number),
+    ghRepo: `${params.owner}/${params.repo}`,
+    base: search.base ?? "",
+    head: search.head ?? "",
+  };
+}
+
+const compareReviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/compare/$owner/$repo/reviews/$reviewRepo/$number",
+  validateSearch: validateCompareSearch,
+  component: CompareReviewPage,
+});
+
+function CompareReviewPage() {
+  const ref = compareReviewRef(compareReviewRoute.useParams(), compareReviewRoute.useSearch());
+  const go = useGo();
+  return (
+    <LocalReviewDetail
+      key={`${ref.repo}#${ref.number}`}
+      repo={ref.repo}
+      number={ref.number}
+      repoLabel={ref.ghRepo}
+      branch={ref.head}
+      base={ref.base}
+      backLabel="Back to compare"
+      onBack={() => go.compare(ref.ghRepo, { head: ref.head, base: ref.base })}
+      onSelectFinding={(findingId) => go.compareFinding(ref, findingId)}
+      onOpenSession={(runId) => go.compareSession(ref, runId)}
+    />
+  );
+}
+
+const compareFindingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/compare/$owner/$repo/reviews/$reviewRepo/$number/findings/$findingId",
+  validateSearch: validateCompareSearch,
+  component: CompareFindingPage,
+});
+
+function CompareFindingPage() {
+  const params = compareFindingRoute.useParams();
+  const ref = compareReviewRef(params, compareFindingRoute.useSearch());
+  const go = useGo();
+  return (
+    <FindingDetail
+      key={params.findingId}
+      findingId={params.findingId}
+      repo={ref.repo}
+      number={ref.number}
+      readOnly
+      onBack={() => go.compareReview(ref)}
+      onSelectFinding={(findingId) => go.compareFinding(ref, findingId)}
+    />
+  );
+}
+
+const compareSessionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/compare/$owner/$repo/reviews/$reviewRepo/$number/runs/$runId",
+  validateSearch: validateCompareSearch,
+  component: CompareSessionPage,
+});
+
+function CompareSessionPage() {
+  const params = compareSessionRoute.useParams();
+  const ref = compareReviewRef(params, compareSessionRoute.useSearch());
+  const go = useGo();
+  return (
+    <RunSession
+      repo={ref.repo}
+      number={ref.number}
+      runId={params.runId}
+      onSelectRun={(runId) => go.compareSession(ref, runId, { replace: true })}
+      onBack={() => go.compareReview(ref)}
+      backLabel="Back to review"
+    />
+  );
+}
+
+const activityRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/activity",
+  validateSearch: (raw: Record<string, unknown>): ActivitySearch => {
+    const days = Number(raw.days);
+    return {
+      days: Number.isFinite(days) && days > 0 ? days : undefined,
+      kind: typeof raw.kind === "string" && raw.kind ? raw.kind : undefined,
+      q: typeof raw.q === "string" && raw.q ? raw.q : undefined,
+    };
+  },
+  component: ActivityPage,
+});
+
+function ActivityPage() {
+  const search = activityRoute.useSearch();
+  const go = useGo();
+  return <ActivityView search={search} onSearchChange={(next) => go.activity(next, { replace: true })} />;
+}
+
 function UnknownPath() {
   const go = useGo();
   return <NotFound title="Page not found" detail={window.location.pathname} backLabel="Back to pull requests" onBack={go.prList} />;
@@ -278,6 +443,12 @@ const routeTree = rootRoute.addChildren([
   localReviewRoute,
   localFindingRoute,
   localSessionRoute,
+  compareIndexRoute,
+  compareRoute,
+  compareReviewRoute,
+  compareFindingRoute,
+  compareSessionRoute,
+  activityRoute,
 ]);
 
 export const router = createRouter({

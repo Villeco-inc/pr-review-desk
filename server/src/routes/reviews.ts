@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
-import { reviewEvents, reviewId, startReview, getThreadLog } from "../services/review-engine";
+import { reviewEvents, reviewOutcomes, reviewId, startReview, getThreadLog, reimportRun } from "../services/review-engine";
 import { splitUnifiedDiff, findPatchForFile } from "../services/diff-utils";
 import { toFindingDto, toReviewDto } from "../services/dto";
 import { getRunSession, listRuns } from "../services/run-log";
 import { isRepoName } from "../services/repo-selection";
-import type { FindingRow, ReviewEvent, ReviewRow } from "../../../shared/types";
+import type { FindingRow, ReviewEvent, ReviewOutcome, ReviewRow } from "../../../shared/types";
 
 export const reviewsRouter = Router();
 
@@ -97,6 +97,17 @@ reviewsRouter.get("/reviews/:owner/:name/:number", (req, res) => {
   res.json({ review: toReviewDto(review), findings });
 });
 
+reviewsRouter.get("/reviews/outcomes", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  const listener = (outcome: ReviewOutcome) => res.write(`data: ${JSON.stringify(outcome)}\n\n`);
+  reviewOutcomes.on("outcome", listener);
+  req.on("close", () => reviewOutcomes.off("outcome", listener));
+});
+
 reviewsRouter.get("/reviews/:owner/:name/:number/events", (req, res) => {
   const id = reviewId(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
 
@@ -161,6 +172,14 @@ reviewsRouter.get("/reviews/:owner/:name/:number/thread", (req, res) => {
 reviewsRouter.get("/reviews/:owner/:name/:number/runs", (req, res) => {
   const id = reviewId(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
   res.json(listRuns(id));
+});
+
+reviewsRouter.post("/runs/:runId/reimport", (req, res) => {
+  try {
+    res.json(reimportRun(req.params.runId));
+  } catch (err) {
+    res.status(422).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 reviewsRouter.get("/runs/:runId", (req, res) => {

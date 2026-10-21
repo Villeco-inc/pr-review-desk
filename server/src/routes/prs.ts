@@ -4,14 +4,28 @@ import { fetchPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } fr
 import { createPrRefresher } from "../services/pr-refresh";
 import { isRepoName, saveSelectedRepos, scopeOf, selectedRepos } from "../services/repo-selection";
 import { reviewId } from "../services/review-engine";
+import { discoveredRepos } from "../services/repo-discovery";
+import { checkoutsRoot } from "../services/local-git";
 import type { FindingRow, MyReviewState, PullRequest, PullRequestDto, ReviewRow } from "../../../shared/types";
 
 export const prsRouter = Router();
 
+/**
+ * The GitHub repos the PR list and Compare offer: the pick saved in the app. Until one is saved,
+ * REPOS plus the GitHub repo of every checkout found under SCAN_DIR stand in for it.
+ */
+export function configuredRepos(): string[] {
+  const found = discoveredRepos(checkoutsRoot())
+    .map((r) => r.ghRepo)
+    .filter((r): r is string => !!r);
+  const startingPick = [...new Set([...(process.env.REPOS ?? "").split(","), ...found].map((r) => r.trim()).filter(Boolean))];
+  return selectedRepos(getDb(), startingPick.join(","));
+}
+
 const refresher = createPrRefresher({
   db: getDb(),
   fetchPrs: fetchPullRequests,
-  selected: () => selectedRepos(getDb(), process.env.REPOS),
+  selected: configuredRepos,
 });
 
 /** Warms the cache now, then keeps it fresh while a client is looking. */
@@ -26,7 +40,7 @@ function scopeFor(req: Request, res: Response): string[] | null {
     res.status(400).json({ error: "repo query param is required" });
     return null;
   }
-  const scope = scopeOf(repo, selectedRepos(getDb(), process.env.REPOS));
+  const scope = scopeOf(repo, configuredRepos());
   if (!scope) res.status(400).json({ error: `${repo} is not a selected repository` });
   return scope;
 }
@@ -52,7 +66,7 @@ function myReviewFor(pr: PullRequest, viewer: string | null): MyReviewState | nu
 }
 
 prsRouter.get("/repos", (_req, res) => {
-  res.json(selectedRepos(getDb(), process.env.REPOS));
+  res.json(configuredRepos());
 });
 
 prsRouter.put("/repos", (req, res) => {
@@ -64,7 +78,7 @@ prsRouter.put("/repos", (req, res) => {
   try {
     const added = saveSelectedRepos(getDb(), repos);
     void refresher.warm(added);
-    res.json(selectedRepos(getDb(), process.env.REPOS));
+    res.json(configuredRepos());
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
   }

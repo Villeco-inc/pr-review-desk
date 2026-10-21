@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeFinding, parseReport } from "../services/findings-parser";
+import { normalizeFinding, parseReport, repairJson } from "../services/findings-parser";
 
 describe("parseReport", () => {
   it("parses a valid report with camelCase fields", () => {
@@ -148,5 +148,35 @@ describe("parseReport", () => {
     );
 
     expect(finding?.references).toEqual([{ file: "b.ts", startLine: 1, endLine: 2, note: "related" }]);
+  });
+});
+
+describe("repairJson", () => {
+  // The exact shape that failed a real review: plain quotes around a value inside French text.
+  const broken =
+    '{"summary": "ok", "findings": [{"file": "a.tsx", "startLine": 3, "severity": "medium", "title": "La carte affiche « 1 icône + "+1" » au lieu des 2", "problem": "x"}]}';
+
+  it("escapes quotes that do not end the string", () => {
+    expect(() => JSON.parse(broken)).toThrow();
+    const parsed = JSON.parse(repairJson(broken));
+    expect(parsed.findings[0].title).toBe('La carte affiche « 1 icône + "+1" » au lieu des 2');
+  });
+
+  it("escapes raw line breaks inside strings", () => {
+    const raw = '{"summary": "two\nlines"}';
+    expect(() => JSON.parse(raw)).toThrow();
+    expect(JSON.parse(repairJson(raw)).summary).toBe("two\nlines");
+  });
+
+  it("leaves valid JSON untouched", () => {
+    const valid = '{"a": "say \\"hi\\"", "b": ["x", "y"], "c": {"d": 1}}';
+    expect(repairJson(valid)).toBe(valid);
+  });
+
+  it("lets parseReport recover the report and says so", () => {
+    const r = parseReport(broken);
+    expect(r.error).toBeNull();
+    expect(r.report?.findings).toHaveLength(1);
+    expect(r.warnings[0].reason).toMatch(/escaped/);
   });
 });
