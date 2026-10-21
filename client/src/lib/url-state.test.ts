@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   forgetLocalRepo,
+  loadCompareHead,
   loadPrFilters,
   loadPrOrder,
   parseSearch,
+  rememberedCompareRepo,
   rememberedLocalRepo,
   rememberedPrList,
   reviewRepoFromSegment,
   reviewRepoSegment,
+  saveCompare,
   saveLocalSelection,
   savePrList,
   savePrOrder,
@@ -76,6 +79,32 @@ describe("list memory", () => {
     expect(rememberedLocalRepo()).toBe("api");
     forgetLocalRepo("api");
     expect(rememberedLocalRepo()).toBeNull();
+  });
+});
+
+describe("compare memory", () => {
+  it("restores the last repository with that repository's own head", () => {
+    saveCompare("Villeco-inc/linea-web", "feat/x");
+    saveCompare("Villeco-inc/linea-mobile", "feat/y");
+    expect(rememberedCompareRepo()).toBe("Villeco-inc/linea-mobile");
+    expect(loadCompareHead("Villeco-inc/linea-web")).toBe("feat/x");
+    expect(loadCompareHead("Villeco-inc/linea-mobile")).toBe("feat/y");
+  });
+
+  it("remembers nothing until a repository is chosen, and keeps a head when saved again without one", () => {
+    expect(rememberedCompareRepo()).toBeNull();
+    expect(loadCompareHead("Villeco-inc/linea-web")).toBeUndefined();
+
+    saveCompare("Villeco-inc/linea-web", "feat/x");
+    saveCompare("Villeco-inc/linea-web", undefined);
+    expect(loadCompareHead("Villeco-inc/linea-web")).toBe("feat/x");
+  });
+
+  it("keeps no copy in the browser, so that resetting the data resets it too", () => {
+    saveCompare("Villeco-inc/linea-web", "feat/x");
+    const storage = (globalThis as unknown as { window: { localStorage: MemoryStorage } }).window.localStorage;
+    expect(storage.getItem("prd:compare:repo")).toBeNull();
+    expect(storage.getItem("prd:compare:head:Villeco-inc/linea-web")).toBeNull();
   });
 });
 

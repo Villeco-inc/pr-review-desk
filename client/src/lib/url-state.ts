@@ -2,7 +2,7 @@
 // Everything else a screen remembers lives in storage — see lib/storage.ts.
 
 import { readStored, writeStored } from "./storage";
-import { localMemory, prsMemory } from "./view-memory";
+import { compareMemory, localMemory, prsMemory } from "./view-memory";
 
 export type Search = Record<string, string | string[]>;
 
@@ -128,22 +128,17 @@ export interface CompareSearch {
 
 export const validateCompareSearch = (raw: Record<string, unknown>): CompareSearch => ({ base: str(raw.base), head: str(raw.head) });
 
-const COMPARE_LAST_REPO = "prd:compare:repo";
-const compareHeadKey = (repo: string) => `prd:compare:head:${repo}`;
-
 export function saveCompare(repo: string, head: string | undefined) {
-  writeStored("local", COMPARE_LAST_REPO, repo);
-  if (head) writeStored("local", compareHeadKey(repo), head);
+  compareMemory.remember(repo, head);
 }
 
 export function rememberedCompareRepo(): string | null {
-  const repo = readStored<string>("local", COMPARE_LAST_REPO);
-  return typeof repo === "string" && repo.includes("/") ? repo : null;
+  const repo = compareMemory.repo();
+  return repo?.includes("/") ? repo : null;
 }
 
 export function loadCompareHead(repo: string): string | undefined {
-  const head = readStored<string>("local", compareHeadKey(repo));
-  return typeof head === "string" && head ? head : undefined;
+  return compareMemory.head(repo) || undefined;
 }
 
 export const compareRepoSegment = (repo: string) => repo.replace(/^compare\//, "");

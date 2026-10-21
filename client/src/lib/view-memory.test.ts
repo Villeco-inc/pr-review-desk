@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadViewMemory, localMemory, prsMemory, resetViewMemory } from "./view-memory";
+import { compareMemory, loadViewMemory, localMemory, prsMemory, resetViewMemory } from "./view-memory";
 
 const ok = (data: unknown) => new Response(data === null ? null : JSON.stringify(data), { status: data === null ? 204 : 200 });
 
@@ -111,6 +111,47 @@ describe("remembering a pull request view", () => {
     prsMemory.remember(web, { sort: "updated", author: ["bob"] });
     await vi.advanceTimersByTimeAsync(500);
     expect(calls).toEqual([put(web, { sort: "updated", author: ["bob"] })]);
+  });
+});
+
+describe("remembering a compare view", () => {
+  const web = "Villeco-inc/linea-web";
+  const mobile = "Villeco-inc/linea-mobile";
+  const put = (body: unknown): Call => ({ url: "/api/view-memory/compare", method: "PUT", body });
+
+  it("serves what the server holds", async () => {
+    stubNetwork(() =>
+      ok({
+        prs: { repo: null, filters: {} },
+        local: { label: null, selection: {} },
+        compare: { repo: web, heads: { [web]: "feat/x" } },
+      })
+    );
+    await loadViewMemory();
+    expect(compareMemory.repo()).toBe(web);
+    expect(compareMemory.head(web)).toBe("feat/x");
+    expect(compareMemory.head(mobile)).toBeUndefined();
+  });
+
+  it("serves what was just remembered at once, and sends it once the changes stop", async () => {
+    const calls = stubNetwork(() => ok(null));
+    compareMemory.remember(web, "feat/x");
+    expect(compareMemory.repo()).toBe(web);
+    expect(compareMemory.head(web)).toBe("feat/x");
+    expect(calls).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(calls).toEqual([put({ repo: web, head: "feat/x" })]);
+  });
+
+  it("keeps a repository's head when it is remembered again without one", async () => {
+    const calls = stubNetwork(() => ok(null));
+    compareMemory.remember(web, "feat/x");
+    compareMemory.remember(web, undefined);
+    expect(compareMemory.head(web)).toBe("feat/x");
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(calls).toEqual([put({ repo: web })]);
   });
 });
 

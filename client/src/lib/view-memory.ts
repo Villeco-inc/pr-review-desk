@@ -9,16 +9,18 @@ type Fields = Record<string, unknown>;
 interface Memory {
   prs: { repo?: string; filters: Record<string, Fields> };
   local: { label?: string; selection: Record<string, Fields> };
+  compare: { repo?: string; heads: Record<string, string> };
 }
 
 interface Stored {
   prs?: { repo?: string | null; filters?: Record<string, Fields> };
   local?: { label?: string | null; selection?: Record<string, Fields> };
+  compare?: { repo?: string | null; heads?: Record<string, string> };
 }
 
 const LOAD_TIMEOUT_MS = 3000;
 
-const blank = (): Memory => ({ prs: { filters: {} }, local: { selection: {} } });
+const blank = (): Memory => ({ prs: { filters: {} }, local: { selection: {} }, compare: { heads: {} } });
 
 let memory: Memory = blank();
 
@@ -42,6 +44,7 @@ export async function loadViewMemory(timeoutMs = LOAD_TIMEOUT_MS): Promise<void>
   memory = {
     prs: { repo: stored.prs?.repo ?? undefined, filters: stored.prs?.filters ?? {} },
     local: { label: stored.local?.label ?? undefined, selection: stored.local?.selection ?? {} },
+    compare: { repo: stored.compare?.repo ?? undefined, heads: stored.compare?.heads ?? {} },
   };
 }
 
@@ -96,6 +99,17 @@ export const prsMemory = {
     memory.prs.repo = repo;
     memory.prs.filters[repo] = fields;
     queue(`prs:${repo}`, write("/api/view-memory/prs", "PUT", { repo, filters: fields }));
+  },
+};
+
+export const compareMemory = {
+  repo: (): string | undefined => memory.compare.repo,
+  head: (repo: string): string | undefined => (Object.hasOwn(memory.compare.heads, repo) ? memory.compare.heads[repo] : undefined),
+  remember(repo: string, head?: string): void {
+    if (repo === "__proto__") return;
+    memory.compare.repo = repo;
+    if (head) memory.compare.heads[repo] = head;
+    queue(`compare:${repo}`, write("/api/view-memory/compare", "PUT", { repo, head }));
   },
 };
 

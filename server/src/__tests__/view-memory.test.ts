@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { migrate } from "../db/schema";
-import { forgetLocalSelection, readViewMemory, rememberLocalSelection, rememberPrView } from "../services/view-memory";
+import { forgetLocalSelection, readViewMemory, rememberCompare, rememberLocalSelection, rememberPrView } from "../services/view-memory";
 
 function openDb(): Database.Database {
   const db = new Database(":memory:");
@@ -16,6 +16,7 @@ describe("view memory, pull request list", () => {
     expect(readViewMemory(openDb(), SELECTION)).toEqual({
       prs: { repo: null, filters: {} },
       local: { label: null, selection: {} },
+      compare: { repo: null, heads: {} },
     });
   });
 
@@ -118,6 +119,49 @@ describe("view memory, writes", () => {
 
     forgetLocalSelection(db, "api");
     expect(writes(db)).toBe(before + 1);
+  });
+});
+
+describe("view memory, compare", () => {
+  const web = "Villeco-inc/linea-web";
+  const mobile = "Villeco-inc/linea-mobile";
+
+  it("remembers the last repository and each repository's own head", () => {
+    const db = openDb();
+    rememberCompare(db, SELECTION, web, "feat/x");
+    rememberCompare(db, SELECTION, mobile, "feat/y");
+    expect(readViewMemory(db, SELECTION).compare).toEqual({ repo: mobile, heads: { [web]: "feat/x", [mobile]: "feat/y" } });
+  });
+
+  it("keeps a repository's head when it is remembered again without one", () => {
+    const db = openDb();
+    rememberCompare(db, SELECTION, web, "feat/x");
+    rememberCompare(db, SELECTION, web, undefined);
+    expect(readViewMemory(db, SELECTION).compare).toEqual({ repo: web, heads: { [web]: "feat/x" } });
+  });
+
+  it("stores a repository under the spelling of the selection, and refuses one that is not selected or 'all'", () => {
+    const db = openDb();
+    rememberCompare(db, SELECTION, "villeco-inc/LINEA-WEB", "feat/x");
+    expect(readViewMemory(db, SELECTION).compare).toEqual({ repo: web, heads: { [web]: "feat/x" } });
+
+    expect(() => rememberCompare(db, SELECTION, "Villeco-inc/other", "feat/z")).toThrow("not a selected repository");
+    expect(() => rememberCompare(db, SELECTION, "all", "feat/z")).toThrow("not a selected repository");
+    expect(readViewMemory(db, SELECTION).compare).toEqual({ repo: web, heads: { [web]: "feat/x" } });
+  });
+
+  it("stops serving a repository that left the selection, with its head", () => {
+    const db = openDb();
+    rememberCompare(db, SELECTION, web, "feat/x");
+    rememberCompare(db, SELECTION, mobile, "feat/y");
+    expect(readViewMemory(db, [web]).compare).toEqual({ repo: null, heads: { [web]: "feat/x" } });
+  });
+
+  it("keeps only a short string as a head", () => {
+    const db = openDb();
+    rememberCompare(db, SELECTION, web, 5);
+    rememberCompare(db, SELECTION, mobile, "x".repeat(301));
+    expect(readViewMemory(db, SELECTION).compare).toEqual({ repo: mobile, heads: {} });
   });
 });
 

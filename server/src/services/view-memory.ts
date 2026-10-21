@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { ALL_REPOS } from "../../../shared/types";
-import { scopeOf } from "./repo-selection";
+import { isRepoName, scopeOf, selectedRepoNamed } from "./repo-selection";
 
 // What each screen remembers between visits: the last repository of the pull request list with that
 // repository's own filters, and the last local repository with its branch pair. One settings row.
@@ -10,13 +10,21 @@ type Fields = Record<string, unknown>;
 export interface ViewMemory {
   prs: { repo: string | null; filters: Record<string, Fields> };
   local: { label: string | null; selection: Record<string, Fields> };
+  compare: { repo: string | null; heads: Record<string, string> };
 }
 
 const KEY = "view_memory";
 
-const empty = (): ViewMemory => ({ prs: { repo: null, filters: {} }, local: { label: null, selection: {} } });
+const empty = (): ViewMemory => ({
+  prs: { repo: null, filters: {} },
+  local: { label: null, selection: {} },
+  compare: { repo: null, heads: {} },
+});
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** A branch or tag name to compare: a short, non-empty string. */
+const isHead = (value: unknown): value is string => typeof value === "string" && value.length >= 1 && value.length <= 300;
 
 /** What is stored comes from the browser: take the known shape and nothing else, so a damaged row reads as empty. */
 function normalize(raw: unknown): ViewMemory {
@@ -25,6 +33,14 @@ function normalize(raw: unknown): ViewMemory {
   if (isObject(raw.prs)) {
     if (typeof raw.prs.repo === "string") memory.prs.repo = raw.prs.repo;
     if (isObject(raw.prs.filters)) for (const [repo, filters] of Object.entries(raw.prs.filters)) memory.prs.filters[repo] = sanitizeFilters(filters);
+  }
+  if (isObject(raw.compare)) {
+    if (typeof raw.compare.repo === "string") memory.compare.repo = raw.compare.repo;
+    if (isObject(raw.compare.heads)) {
+      for (const [repo, head] of Object.entries(raw.compare.heads)) {
+        if (isRepoName(repo) && isHead(head)) memory.compare.heads[repo] = head;
+      }
+    }
   }
   if (isObject(raw.local)) {
     if (typeof raw.local.label === "string") memory.local.label = raw.local.label;
@@ -117,7 +133,23 @@ export function readViewMemory(db: Database.Database, selected: string[]): ViewM
     if (scope) filters[repo === ALL_REPOS ? ALL_REPOS : scope[0]] = value;
   }
   const repo = memory.prs.repo !== null && scopeOf(memory.prs.repo, selected) ? memory.prs.repo : null;
-  return { prs: { repo, filters }, local: memory.local };
+  const heads: Record<string, string> = {};
+  for (const [name, head] of Object.entries(memory.compare.heads)) {
+    const selectedName = selectedRepoNamed(name, selected);
+    if (selectedName) heads[selectedName] = head;
+  }
+  const compareRepo = memory.compare.repo === null ? null : selectedRepoNamed(memory.compare.repo, selected);
+  return { prs: { repo, filters }, local: memory.local, compare: { repo: compareRepo, heads } };
+}
+
+/** Remembers the repository Compare shows and, when given, the head compared in it; only a selected repository is accepted. */
+export function rememberCompare(db: Database.Database, selected: string[], repo: string, head: unknown): void {
+  const name = selectedRepoNamed(repo, selected);
+  if (!name) throw new Error(`${repo} is not a selected repository`);
+  const memory = load(db);
+  memory.compare.repo = name;
+  if (isHead(head)) memory.compare.heads[name] = head;
+  save(db, memory);
 }
 
 /** Remembers the repository the list shows and its filters; only "all" or a selected repository is accepted. */
