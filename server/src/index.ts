@@ -12,6 +12,7 @@ import { compareRouter } from "./routes/compare";
 import { telemetryRouter } from "./routes/telemetry";
 import { track } from "./db/telemetry";
 import { localOnly } from "./services/local-only";
+import { isTrackedRequest } from "./services/tracked-requests";
 import { failInterruptedRuns } from "./services/run-log";
 import { configuredLocalRepos } from "./services/local-git";
 
@@ -33,8 +34,8 @@ app.use((req, _res, next) => {
 
 app.use((req, res, next) => {
   console.log(`[http] ${req.method} ${req.url}`);
-  // Every API call is recorded once it has answered, except the client's own telemetry batches.
-  if (req.path.startsWith("/api/") && req.path !== "/api/telemetry/events") {
+  // Every API call is recorded once it has answered, except what isTrackedRequest leaves out.
+  if (isTrackedRequest(req.method, req.path)) {
     const start = Date.now();
     res.on("finish", () => {
       const route = req.route?.path ? `${req.baseUrl}${req.route.path}` : req.path;
