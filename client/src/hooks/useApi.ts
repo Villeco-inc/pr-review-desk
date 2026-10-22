@@ -11,6 +11,9 @@ interface QueryState<T> {
 
 const queryCache = new Map<string, { data: unknown; ts: number }>();
 const DEFAULT_STALE_MS = 30_000;
+// A read the server never answers would keep its load, and the polling behind it, waiting for ever.
+const LOAD_TIMEOUT_MS = 60_000;
+const TIMEOUT_MESSAGE = "The server did not answer in time";
 
 function cacheKey(url: string): string {
   return url.replace(/[&?]_=\d+/, "");
@@ -22,7 +25,18 @@ export function invalidateCache(prefix: string) {
   }
 }
 
-export function useQuery<T>(url: string | null, deps: unknown[] = [], staleMs = DEFAULT_STALE_MS) {
+/**
+ * With `pollMs`, the query reloads quietly on that period while the tab is visible; a function picks the period
+ * (0 for none) from the last answer or error. A change of `quietDeps` alone reloads quietly too, when the rows of
+ * that url are on screen: nothing is waited for, so no load is shown. Any other change shows the load.
+ */
+export function useQuery<T>(
+  url: string | null,
+  deps: unknown[] = [],
+  staleMs = DEFAULT_STALE_MS,
+  pollMs?: number | ((data: T | null, error: string | null) => number),
+  quietDeps: unknown[] = []
+) {
   const key = url ? cacheKey(url) : null;
   const cached = key ? queryCache.get(key) : null;
 
@@ -33,33 +47,74 @@ export function useQuery<T>(url: string | null, deps: unknown[] = [], staleMs = 
     error: null,
   });
   const requestId = useRef(0);
+  const loadingId = useRef<number | null>(null);
 
-  const refetch = useCallback(() => {
-    if (!url) return;
-    const id = ++requestId.current;
-    setState((prev) => ({ ...prev, loading: true, error: null }));
-    fetchJson<T>(url)
-      .then((data) => {
-        if (requestId.current === id) {
-          const k = cacheKey(url);
-          queryCache.set(k, { data, ts: Date.now() });
-          setState({ data, dataKey: k, loading: false, error: null });
-        }
-      })
-      .catch((err: Error) => {
-        if (requestId.current === id) setState((prev) => ({ ...prev, loading: false, error: err.message }));
-      });
+  const run = useCallback(
+    (quiet: boolean, reportFailure = false) => {
+      if (!url) return;
+      // A quiet reload would take over from the deliberate load, which then never reports its end or its error.
+      if (quiet && loadingId.current !== null) return;
+      const id = ++requestId.current;
+      if (!quiet) {
+        loadingId.current = id;
+        setState((prev) => ({ ...prev, loading: true, error: null }));
+      }
+      const controller = new AbortController();
+      const giveUp = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
+      fetchJson<T>(url, { signal: controller.signal })
+        .then((data) => {
+          if (requestId.current === id) {
+            const k = cacheKey(url);
+            queryCache.set(k, { data, ts: Date.now() });
+            loadingId.current = null;
+            setState({ data, dataKey: k, loading: false, error: null });
+          }
+        })
+        .catch((err: Error) => {
+          // A polled reload that fails keeps what is on screen and says nothing; a deliberate load, or a quiet one
+          // that was asked for because the rows are behind, reports the error (the rows stay).
+          if (requestId.current === id && (!quiet || reportFailure)) {
+            if (!quiet) loadingId.current = null;
+            setState((prev) => ({ ...prev, loading: false, error: controller.signal.aborted ? TIMEOUT_MESSAGE : err.message }));
+          }
+        })
+        .finally(() => clearTimeout(giveUp));
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url]);
+    [url]
+  );
+  const refetch = useCallback(() => run(false), [run]);
 
+  const period = typeof pollMs === "function" ? pollMs(state.data, state.error) : pollMs;
   useEffect(() => {
+    if (!period || !url) return;
+    const reload = () => {
+      if (document.visibilityState === "visible") run(true);
+    };
+    const timer = setInterval(reload, period);
+    document.addEventListener("visibilitychange", reload); // back on the tab: ask now, not at the next period
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", reload);
+    };
+  }, [period, url, run]);
+
+  const previousDeps = useRef<unknown[] | null>(null);
+  useEffect(() => {
+    const before = previousDeps.current;
+    previousDeps.current = deps;
     if (cached && Date.now() - cached.ts < staleMs) {
+      requestId.current += 1; // a reply still in flight belongs to the previous url
+      loadingId.current = null;
       setState({ data: cached.data as T, dataKey: key, loading: false, error: null });
       return;
     }
-    refetch();
+    const onlyQuietChanged = !!before && before.length === deps.length && before.every((d, i) => Object.is(d, deps[i]));
+    // Rows of this very url on screen mean the url did not change either.
+    const quiet = onlyQuietChanged && state.dataKey === key && loadingId.current === null;
+    run(quiet, quiet);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, ...deps]);
+  }, [url, ...deps, ...quietDeps]);
 
   return { ...state, refetch };
 }

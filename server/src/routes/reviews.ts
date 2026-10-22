@@ -4,12 +4,19 @@ import { reviewEvents, reviewOutcomes, reviewId, startReview, getThreadLog, reim
 import { splitUnifiedDiff, findPatchForFile } from "../services/diff-utils";
 import { toFindingDto, toReviewDto } from "../services/dto";
 import { getRunSession, listRuns } from "../services/run-log";
+import { isRepoName } from "../services/repo-selection";
+import { findReview } from "../services/review-lookup";
 import type { FindingRow, ReviewEvent, ReviewOutcome, ReviewRow } from "../../../shared/types";
 
 export const reviewsRouter = Router();
 
 function rlog(...args: unknown[]): void {
   console.log("[route:reviews]", ...args);
+}
+
+/** The id a pull request's review was stored under, whatever the case its repository was written in then. */
+function idOf(repo: string, num: number): string {
+  return findReview(getDb(), repo, num)?.id ?? reviewId(repo, num);
 }
 
 function loadReview(id: string): ReviewRow | undefined {
@@ -36,6 +43,11 @@ reviewsRouter.post("/reviews", async (req, res) => {
   if (!repo || !Number.isFinite(number)) {
     rlog("POST /reviews 400: missing repo or number");
     res.status(400).json({ error: "repo and number are required" });
+    return;
+  }
+  if (!isRepoName(repo)) {
+    rlog("POST /reviews 400: repo is not owner/name");
+    res.status(400).json({ error: "repo must be owner/name" });
     return;
   }
 
@@ -65,7 +77,7 @@ reviewsRouter.get("/reviews/latest", (req, res) => {
     return;
   }
 
-  const id = reviewId(repo, num);
+  const id = idOf(repo, num);
   const review = loadReview(id);
   if (!review) {
     res.json(null);
@@ -78,7 +90,7 @@ reviewsRouter.get("/reviews/latest", (req, res) => {
 });
 
 reviewsRouter.get("/reviews/:owner/:name/:number", (req, res) => {
-  const id = reviewId(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
+  const id = idOf(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
   const review = loadReview(id);
   if (!review) {
     res.status(404).json({ error: "review not found" });
@@ -103,7 +115,7 @@ reviewsRouter.get("/reviews/outcomes", (req, res) => {
 });
 
 reviewsRouter.get("/reviews/:owner/:name/:number/events", (req, res) => {
-  const id = reviewId(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
+  const id = idOf(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -134,6 +146,10 @@ reviewsRouter.post("/reviews/:owner/:name/:number/submit", async (req, res) => {
   const { event, body } = req.body as { event?: string; body?: string };
   rlog(`POST submit ${repo}#${num} event=${event}`);
 
+  if (!isRepoName(repo)) {
+    res.status(400).json({ error: "repo must be owner/name" });
+    return;
+  }
   if (event !== "APPROVE" && event !== "REQUEST_CHANGES" && event !== "COMMENT") {
     res.status(400).json({ error: 'event must be "APPROVE", "REQUEST_CHANGES" or "COMMENT"' });
     return;
@@ -155,12 +171,12 @@ reviewsRouter.post("/reviews/:owner/:name/:number/submit", async (req, res) => {
 });
 
 reviewsRouter.get("/reviews/:owner/:name/:number/thread", (req, res) => {
-  const id = reviewId(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
+  const id = idOf(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
   res.json({ log: getThreadLog(id) });
 });
 
 reviewsRouter.get("/reviews/:owner/:name/:number/runs", (req, res) => {
-  const id = reviewId(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
+  const id = idOf(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
   res.json(listRuns(id));
 });
 
@@ -182,7 +198,7 @@ reviewsRouter.get("/runs/:runId", (req, res) => {
 });
 
 reviewsRouter.get("/reviews/:owner/:name/:number/diff", (req, res) => {
-  const id = reviewId(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
+  const id = idOf(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
   const review = loadReview(id);
   if (!review) {
     res.status(404).json({ error: "review not found" });
@@ -193,7 +209,7 @@ reviewsRouter.get("/reviews/:owner/:name/:number/diff", (req, res) => {
 });
 
 reviewsRouter.get("/reviews/:owner/:name/:number/diff/*file", (req, res) => {
-  const id = reviewId(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
+  const id = idOf(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
   const review = loadReview(id);
   if (!review) {
     res.status(404).json({ error: "review not found" });
@@ -215,7 +231,7 @@ reviewsRouter.post("/reviews/:owner/:name/:number/post-all", async (req, res) =>
   const { postInlineComment, postFileComment, postIssueComment, getHeadSha } = await import("../services/github");
   const { diffHunkRanges, resolvePostAnchor, findPatchForFile } = await import("../services/diff-utils");
 
-  const id = reviewId(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
+  const id = idOf(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
   const review = loadReview(id);
   if (!review) {
     res.status(404).json({ error: "review not found" });

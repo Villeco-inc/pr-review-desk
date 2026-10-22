@@ -4,7 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { migrate } from "../db/schema";
-import { saveSelectedRepos, selectedRepos } from "../services/repo-selection";
+import { isRepoName, parseRepoList, saveSelectedRepos, scopeOf, selectedRepoNamed, selectedRepos } from "../services/repo-selection";
 
 const dirs: string[] = [];
 
@@ -45,6 +45,81 @@ describe("selected repositories", () => {
     saveSelectedRepos(db, ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"]);
     saveSelectedRepos(db, ["Villeco-inc/linea-web"]);
     expect(selectedRepos(db, undefined)).toEqual(["Villeco-inc/linea-web"]);
+  });
+
+  it("tells which repositories a pick added to the previous one", () => {
+    const db = openDb();
+    expect(saveSelectedRepos(db, ["Villeco-inc/linea-web"])).toEqual(["Villeco-inc/linea-web"]);
+    expect(saveSelectedRepos(db, ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile", "Villeco-inc/linea-mobile"])).toEqual(["Villeco-inc/linea-mobile"]);
+    expect(saveSelectedRepos(db, ["Villeco-inc/linea-mobile"])).toEqual([]);
+  });
+
+  it("reads 'all' as the whole selection and a selected repository as itself", () => {
+    const selection = ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"];
+    expect(scopeOf("all", selection)).toEqual(selection);
+    expect(scopeOf("Villeco-inc/linea-mobile", selection)).toEqual(["Villeco-inc/linea-mobile"]);
+  });
+
+  it("refuses what is not selected, whatever it looks like", () => {
+    const selection = ["Villeco-inc/linea-web"];
+    expect(scopeOf("Villeco-inc/linea-mobile", selection)).toBeNull();
+    expect(scopeOf("--help", selection)).toBeNull();
+    expect(scopeOf("org:Villeco-inc", selection)).toBeNull();
+    expect(scopeOf("", selection)).toBeNull();
+  });
+
+  it("keeps only valid repositories from REPOS, once each whatever their case, and says what it ignored", () => {
+    expect(parseRepoList(" Villeco-inc/villeco, --help, all, villeco-inc/Villeco ,Villeco-inc/linea-web")).toEqual({
+      repos: ["Villeco-inc/villeco", "Villeco-inc/linea-web"],
+      ignored: ["--help", "all"],
+    });
+    expect(selectedRepos(openDb(), "--help,Villeco-inc/villeco,villeco-inc/VILLECO")).toEqual(["Villeco-inc/villeco"]);
+  });
+
+  it("accepts owner/name and nothing that could pass for an option or a path", () => {
+    expect(isRepoName("Villeco-inc/linea-web")).toBe(true);
+    expect(isRepoName("villeco/pr_review.desk")).toBe(true);
+    for (const bad of ["", "villeco", "--help", "-x/y", "--help/x", "x/", "/y", "a/b/c", "a b/c", "a/b c", "all", "a/..", "a/."]) {
+      expect(isRepoName(bad)).toBe(false);
+    }
+  });
+
+  it("refuses what is not even a string, such as a list a request body could carry", () => {
+    expect(isRepoName(["Villeco-inc/linea-web"])).toBe(false);
+    expect(isRepoName(undefined)).toBe(false);
+    expect(isRepoName(42)).toBe(false);
+  });
+
+  it("serves only valid, distinct repositories from a selection saved under an older rule", () => {
+    const db = openDb();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('selected_repos', ?)").run(
+      JSON.stringify(["-x/y", "Villeco-inc/Linea-Web", "villeco-inc/linea-web", "Villeco-inc/villeco"])
+    );
+    expect(selectedRepos(db, undefined)).toEqual(["Villeco-inc/Linea-Web", "Villeco-inc/villeco"]);
+  });
+
+  it("reads a repository whatever its case and answers with the selected spelling", () => {
+    expect(scopeOf("villeco-inc/linea-web", ["Villeco-inc/Linea-Web"])).toEqual(["Villeco-inc/Linea-Web"]);
+  });
+
+  it("saves a repository once whatever the case it is spelled in", () => {
+    const db = openDb();
+    expect(saveSelectedRepos(db, ["Villeco-inc/linea-web", "villeco-inc/Linea-Web"])).toEqual(["Villeco-inc/linea-web"]);
+    expect(selectedRepos(db, undefined)).toEqual(["Villeco-inc/linea-web"]);
+    expect(saveSelectedRepos(db, ["VILLECO-INC/LINEA-WEB", "Villeco-inc/linea-mobile"])).toEqual(["Villeco-inc/linea-mobile"]);
+  });
+
+  it("names a selected repository by its selected spelling, and never answers for all", () => {
+    const selection = ["Villeco-inc/Linea-Web", "Villeco-inc/linea-mobile"];
+    expect(selectedRepoNamed("villeco-inc/linea-web", selection)).toBe("Villeco-inc/Linea-Web");
+    expect(selectedRepoNamed("Villeco-inc/linea-mobile", selection)).toBe("Villeco-inc/linea-mobile");
+    expect(selectedRepoNamed("Villeco-inc/other", selection)).toBeNull();
+    expect(selectedRepoNamed("all", selection)).toBeNull();
+    expect(selectedRepoNamed("", selection)).toBeNull();
+  });
+
+  it("reads 'all' as nothing when nothing is selected", () => {
+    expect(scopeOf("all", [])).toEqual([]);
   });
 
   it("refuses an empty pick and keeps the previous one", () => {
