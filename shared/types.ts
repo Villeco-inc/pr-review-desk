@@ -105,7 +105,7 @@ export interface Freshness {
   fetchedAt: string | null;
   /** The last refresh error among them, until a refresh of that repository succeeds. */
   error: string | null;
-  /** Changes whenever any of the repositories is fetched again, so a reader holding an older one reloads the list. */
+  /** Changes whenever the pull requests of any of the repositories, or the reviews on them, change: a reader holding an older one reloads the list. The same list fetched again leaves it as it is. */
   version: string;
   /** True while GitHub is being asked for one of the repositories. */
   refreshing: boolean;

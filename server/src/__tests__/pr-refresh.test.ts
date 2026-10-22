@@ -138,7 +138,7 @@ describe("pull request cache", () => {
     try {
       const repo = "Villeco-inc/linea-web";
       const gh = fakeGithub();
-      const delays = [1000, 5000];
+      const delays = [6000, 10_000];
       let asked = 0;
       const refresher = createPrRefresher({
         db: openDb(),
@@ -152,10 +152,10 @@ describe("pull request cache", () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(gh.calls).toEqual([repo]);
 
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(6000);
       expect(gh.calls).toEqual([repo, repo]);
 
-      await vi.advanceTimersByTimeAsync(4000);
+      await vi.advanceTimersByTimeAsync(9000);
       expect(gh.calls).toEqual([repo, repo]);
 
       await vi.advanceTimersByTimeAsync(1000);
@@ -180,7 +180,7 @@ describe("pull request cache", () => {
           if (reads === 2) throw new Error("db locked");
           return [repo];
         },
-        refreshEveryMs: () => 1000,
+        refreshEveryMs: () => 6000,
       });
 
       refresher.touch();
@@ -188,15 +188,46 @@ describe("pull request cache", () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(gh.calls).toEqual([repo]);
 
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(6000);
       expect(gh.calls).toEqual([repo]);
 
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(6000);
       expect(gh.calls).toEqual([repo, repo]);
       stop();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("does not refresh faster than GitHub's rate limit allows for the number of repositories, even while a client is looking", async () => {
+    vi.useFakeTimers();
+    try {
+      const repos = Array.from({ length: 30 }, (_, i) => `Villeco-inc/repo-${i}`);
+      const gh = fakeGithub();
+      const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => repos, refreshEveryMs: () => 1000 });
+
+      refresher.touch();
+      const stop = refresher.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(gh.calls).toHaveLength(30);
+
+      await vi.advanceTimersByTimeAsync(172_799);
+      expect(gh.calls).toHaveLength(30);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(gh.calls).toHaveLength(60);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("announces the delay it really keeps, so a page does not judge its data by a pace the server cannot hold", async () => {
+    const repos = Array.from({ length: 30 }, (_, i) => `Villeco-inc/repo-${i}`);
+    const refresher = createPrRefresher({ db: openDb(), fetchPrs: fakeGithub().fetchPrs, selected: () => repos, refreshEveryMs: () => 45_000 });
+
+    await refresher.warm();
+
+    expect(refresher.freshness(repos).activeEveryMs).toBe(172_800);
   });
 
   it("falls back to ninety seconds when the delay it is given cannot be used", async () => {
@@ -288,6 +319,33 @@ describe("pull request cache", () => {
     expect(refresher.freshness(both).version).toBe(after.version);
   });
 
+  it("keeps its version when GitHub gives the same list again, and changes it when the list differs or first appears", async () => {
+    const repo = "Villeco-inc/linea-web";
+    let clock = Date.parse("2026-10-15T12:00:00Z");
+    let title = "same";
+    const refresher = createPrRefresher({
+      db: openDb(),
+      fetchPrs: async (r) => [pr(r, title)],
+      selected: () => [],
+      now: () => clock,
+    });
+
+    const never = refresher.freshness([repo]).version;
+    await refresher.warm([repo]);
+    const first = refresher.freshness([repo]);
+    expect(first.version).not.toBe(never);
+
+    clock += 90_000;
+    await refresher.warm([repo]);
+    const again = refresher.freshness([repo]);
+    expect(again.fetchedAt).toBe("2026-10-15T12:01:30.000Z");
+    expect(again.version).toBe(first.version);
+
+    title = "changed";
+    await refresher.warm([repo]);
+    expect(refresher.freshness([repo]).version).not.toBe(first.version);
+  });
+
   it("refreshes at once when a client comes back after the quiet period, not on the first visit", async () => {
     const repo = "Villeco-inc/linea-web";
     const gh = fakeGithub();
@@ -372,6 +430,28 @@ describe("pull request cache", () => {
     expect(version()).toBe(posted);
     db.prepare("UPDATE findings SET state = 'posted' WHERE id = 'f2'").run();
     expect(version()).not.toBe(posted);
+  });
+
+  it("counts the reviews of a repository whatever the case it was stored in, so one that moves still changes the version", async () => {
+    const web = "Villeco-inc/linea-web";
+    const db = openDb();
+    const refresher = createPrRefresher({
+      db,
+      fetchPrs: fakeGithub().fetchPrs,
+      selected: () => [],
+      now: () => Date.parse("2026-10-15T12:00:00Z"),
+    });
+    const version = () => refresher.freshness([web]).version;
+
+    await refresher.list([web]);
+    const none = version();
+
+    db.prepare("INSERT INTO reviews (id, repo, number, status, created_at, updated_at) VALUES ('villeco-inc/linea-web#1', 'villeco-inc/linea-web', 1, 'running', 't', 't')").run();
+    const started = version();
+    expect(started).not.toBe(none);
+
+    db.prepare("UPDATE reviews SET status = 'reported' WHERE id = 'villeco-inc/linea-web#1'").run();
+    expect(version()).not.toBe(started);
   });
 
   it("keeps the recorded error when the fetched list cannot be stored", async () => {

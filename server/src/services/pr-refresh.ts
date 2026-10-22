@@ -20,12 +20,12 @@ const ACTIVE_WINDOW_MS = 10 * 60_000;
 const IDLE_REFRESH_EVERY_MS = 30 * 60_000;
 
 // GitHub gives 5000 GraphQL points an hour. Refreshing one repository is taken to cost 2 (not measured), and
-// refreshing while nobody looks may use a quarter of the hour, which leaves the rest to people and to reviews.
+// refreshing on a schedule may use a quarter of the hour, which leaves the rest to people and to reviews.
 const GITHUB_POINTS_PER_HOUR = 5000;
 const POINTS_PER_REPO_REFRESH = 2;
-const IDLE_BUDGET_SHARE = 0.25;
-const minIdleRefreshEveryMs = (repoCount: number) =>
-  Math.ceil((repoCount * POINTS_PER_REPO_REFRESH * 3_600_000) / (GITHUB_POINTS_PER_HOUR * IDLE_BUDGET_SHARE));
+const SCHEDULE_BUDGET_SHARE = 0.25;
+const minRefreshEveryMs = (repoCount: number) =>
+  Math.ceil((repoCount * POINTS_PER_REPO_REFRESH * 3_600_000) / (GITHUB_POINTS_PER_HOUR * SCHEDULE_BUDGET_SHARE));
 
 /** A setting that cannot be read, or is not a positive number, falls back to its default instead of breaking the schedule. */
 function read(setting: () => number, fallback: number): number {
@@ -96,11 +96,18 @@ export function createPrRefresher({
     return lists.flatMap((l) => l ?? []);
   }
 
+  // How many repositories the last full refresh covered: GitHub's limit bounds how often that many can be asked for.
+  let repoCount = 0;
+  const activeEvery = () => Math.max(read(refreshEveryMs, REFRESH_EVERY_MS), minRefreshEveryMs(repoCount));
+  const idleEvery = () => Math.max(read(idleRefreshEveryMs, IDLE_REFRESH_EVERY_MS), minRefreshEveryMs(repoCount));
+
   /** Refreshes the given repositories, the selected ones by default; a failure is kept for freshness(), never thrown. */
   async function warm(repos?: string[]): Promise<void> {
     if (!repos) lastWarm = now(); // only a refresh of every selected repository tells when the next slow one is due
     try {
-      await Promise.allSettled((repos ?? selected()).map(refreshRepo));
+      const targets = repos ?? selected();
+      if (!repos) repoCount = targets.length;
+      await Promise.allSettled(targets.map(refreshRepo));
     } catch (err) {
       console.error("[refresh] the selected repositories could not be read:", err);
     }
@@ -116,23 +123,23 @@ export function createPrRefresher({
         `SELECT r.id, r.status, r.updated_at,
                 (SELECT count(*) FROM findings f WHERE f.review_id = r.id AND f.state = 'open') AS open,
                 (SELECT count(*) FROM findings f WHERE f.review_id = r.id AND f.state = 'posted') AS posted
-           FROM reviews r WHERE r.repo IN (${repos.map(() => "?").join(",")}) ORDER BY r.id`
+           FROM reviews r WHERE lower(r.repo) IN (${repos.map(() => "?").join(",")}) ORDER BY r.id`
       )
-      .all(...repos);
+      .all(...repos.map((repo) => repo.toLowerCase()));
     return createHash("sha1").update(JSON.stringify(rows)).digest("hex").slice(0, 12);
   }
 
+  // The version follows what the list shows, not when it was fetched: the same list fetched again must not make a page reload it.
   function freshness(repos: string[]): Freshness {
-    const fetchedAt = repos.map((repo) => {
-      const row = db.prepare("SELECT fetched_at FROM pr_cache WHERE repo = ?").get(repo) as { fetched_at: string } | undefined;
-      return row?.fetched_at ?? null;
-    });
+    const rows = repos.map((repo) => db.prepare("SELECT prs, fetched_at FROM pr_cache WHERE repo = ?").get(repo) as { prs: string; fetched_at: string } | undefined);
+    const fetchedAt = rows.map((row) => row?.fetched_at ?? null);
+    const contents = rows.map((row) => (row ? createHash("sha1").update(row.prs).digest("hex").slice(0, 12) : ""));
     return {
       fetchedAt: repos.length === 0 || fetchedAt.includes(null) ? null : (fetchedAt as string[]).reduce((a, b) => (a < b ? a : b)),
       error: repos.map((repo) => errors.get(repo)).find((e) => e !== undefined) ?? null,
-      version: `${fetchedAt.map((f) => f ?? "").join("|")}#${reviewsFingerprint(repos)}`,
+      version: `${contents.join("|")}#${reviewsFingerprint(repos)}`,
       refreshing: repos.some((repo) => inFlight.has(repo)),
-      activeEveryMs: read(refreshEveryMs, REFRESH_EVERY_MS),
+      activeEveryMs: activeEvery(),
     };
   }
 
@@ -151,14 +158,7 @@ export function createPrRefresher({
   let lastWarm: number | null = null;
 
   function idleRefreshDue(): boolean {
-    if (lastWarm === null) return false;
-    let repoCount = 0;
-    try {
-      repoCount = selected().length;
-    } catch {
-      // an unreadable selection leaves only the delay itself
-    }
-    return now() - lastWarm >= Math.max(read(idleRefreshEveryMs, IDLE_REFRESH_EVERY_MS), minIdleRefreshEveryMs(repoCount));
+    return lastWarm !== null && now() - lastWarm >= idleEvery();
   }
 
   async function tick(): Promise<void> {
@@ -172,7 +172,7 @@ export function createPrRefresher({
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     const schedule = () => {
-      timer = setTimeout(() => void tick().then(() => !stopped && schedule()), read(refreshEveryMs, REFRESH_EVERY_MS));
+      timer = setTimeout(() => void tick().then(() => !stopped && schedule()), activeEvery());
     };
     schedule();
     return () => {

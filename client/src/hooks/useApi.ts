@@ -25,12 +25,12 @@ export function invalidateCache(prefix: string) {
   }
 }
 
-/** With `pollMs`, the query reloads quietly on that period while the tab is visible; a function picks the period from the last answer. */
+/** With `pollMs`, the query reloads quietly on that period while the tab is visible; a function picks the period (0 for none) from the last answer or error. */
 export function useQuery<T>(
   url: string | null,
   deps: unknown[] = [],
   staleMs = DEFAULT_STALE_MS,
-  pollMs?: number | ((data: T | null) => number)
+  pollMs?: number | ((data: T | null, error: string | null) => number)
 ) {
   const key = url ? cacheKey(url) : null;
   const cached = key ? queryCache.get(key) : null;
@@ -79,7 +79,7 @@ export function useQuery<T>(
   );
   const refetch = useCallback(() => run(false), [run]);
 
-  const period = typeof pollMs === "function" ? pollMs(state.data) : pollMs;
+  const period = typeof pollMs === "function" ? pollMs(state.data, state.error) : pollMs;
   useEffect(() => {
     if (!period || !url) return;
     const reload = () => {

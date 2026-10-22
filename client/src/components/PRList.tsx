@@ -16,10 +16,11 @@ import { formatCount, relativeTime } from "../lib/format";
 import { ShellActions, useRailCount } from "./AppShell";
 import { focusedAttr, moveFocus, useHotkeys } from "../hooks/useHotkeys";
 import { describePrListError } from "../lib/github-errors";
-import { describeFreshness, freshnessPollMs } from "../lib/freshness";
+import { describeFreshness } from "../lib/freshness";
 import { isListLoading, matchRepo, shownError } from "../lib/list-state";
 import { useNow } from "../hooks/useNow";
 import { useHardRefreshOnReturn } from "../hooks/useHardRefreshOnReturn";
+import { usePrList } from "../hooks/usePrList";
 import { savePrOrder, type PrListSearch, type SortKey, type SortDir } from "../lib/url-state";
 
 const TH = "h-10 whitespace-nowrap bg-subtle px-3 text-left label-caps text-fg-2 edge-b first:pl-4";
@@ -119,15 +120,7 @@ export default function PRList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repos, repo, search.repo]);
 
-  // The cheap question comes first: the list is loaded once its answer is in, and again whenever the
-  // server fetched something new.
-  const freshnessKey = repo ? `/api/freshness?repo=${encodeURIComponent(repo)}` : null;
-  const {
-    data: freshnessData,
-    dataKey: freshnessDataKey,
-    error: freshnessError,
-  } = useQuery<Freshness>(freshnessKey, [repo, refreshKey], 0, freshnessPollMs);
-  const freshness = freshnessData && freshnessDataKey === freshnessKey ? freshnessData : null;
+  const { freshnessKey, freshness, freshnessError, prs, dataKey, prsKey, listLoading, listError } = usePrList(repo, refreshKey);
   const now = useNow(AGE_TICK_MS);
 
   // Asks GitHub now, then rereads the list. The cache a failed ask leaves behind still shows, dated by freshness.
@@ -146,12 +139,6 @@ export default function PRList({
   useHardRefreshOnReturn(freshnessKey, () => void refresh(), forceRefresh.loading);
   const refreshingNow = !!freshness?.refreshing || forceRefresh.loading;
 
-  const prsKey = repo ? `/api/prs?repo=${encodeURIComponent(repo)}` : null;
-  const { data: prs, dataKey, loading: listLoading, error: listError } = useQuery<PullRequestDto[]>(
-    freshness ? prsKey : null,
-    [repo, freshness?.version],
-    0
-  );
   const error = shownError({ hasRepos: !!repos, reposError, listError, freshnessError, hasFreshness: !!freshness });
   // Right after a repo switch the previous repo's rows are still in hand for a frame.
   const rowsAreCurrent = !!prs && dataKey === prsKey;

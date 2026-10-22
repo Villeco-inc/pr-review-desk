@@ -3,7 +3,7 @@ import { getDb } from "../db/schema";
 import { fetchPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } from "../services/github";
 import { createPrRefresher } from "../services/pr-refresh";
 import { isRepoName, saveSelectedRepos, scopeOf, selectedRepos } from "../services/repo-selection";
-import { reviewId } from "../services/review-engine";
+import { findReview } from "../services/review-lookup";
 import { discoveredRepos } from "../services/repo-discovery";
 import { checkoutsRoot } from "../services/local-git";
 import type { FindingRow, MyReviewState, PullRequest, PullRequestDto, ReviewRow } from "../../../shared/types";
@@ -46,8 +46,7 @@ function scopeFor(req: Request, res: Response): string[] | null {
 }
 
 function reviewStatusFor(repo: string, number: number): ReviewRow | undefined {
-  const db = getDb();
-  return db.prepare("SELECT * FROM reviews WHERE id = ?").get(reviewId(repo, number)) as ReviewRow | undefined;
+  return findReview(getDb(), repo, number);
 }
 
 function findingCounts(id: string): { open: number; posted: number } {
