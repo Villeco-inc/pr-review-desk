@@ -73,10 +73,15 @@ export function createPrRefresher({
       errors.set(repo, err instanceof Error ? err.message : String(err));
       throw err;
     }
-    db.prepare(
-      `INSERT INTO pr_cache (repo, prs, fetched_at) VALUES (@repo, @prs, @fetched_at)
-       ON CONFLICT(repo) DO UPDATE SET prs = excluded.prs, fetched_at = excluded.fetched_at`
-    ).run({ repo, prs: JSON.stringify(prs), fetched_at: new Date(now()).toISOString() });
+    try {
+      db.prepare(
+        `INSERT INTO pr_cache (repo, prs, fetched_at) VALUES (@repo, @prs, @fetched_at)
+         ON CONFLICT(repo) DO UPDATE SET prs = excluded.prs, fetched_at = excluded.fetched_at`
+      ).run({ repo, prs: JSON.stringify(prs), fetched_at: new Date(now()).toISOString() });
+    } catch (err) {
+      if (!errors.has(repo)) errors.set(repo, err instanceof Error ? err.message : String(err));
+      throw err;
+    }
     errors.delete(repo);
   }
 

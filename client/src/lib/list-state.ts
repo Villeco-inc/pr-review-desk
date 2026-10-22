@@ -1,3 +1,5 @@
+import { ALL_REPOS } from "../../../shared/types";
+
 export interface ListState {
   /** The repository being shown; empty while none is selected. */
   repo: string;
@@ -13,6 +15,13 @@ export interface ListState {
 /** True from the moment a repository is shown until its rows or an error arrive, so the empty state never flashes in between. */
 export function isListLoading({ repo, rowsAreCurrent, listLoading, failed, waitingForRepos }: ListState): boolean {
   return listLoading || waitingForRepos || (repo !== "" && !rowsAreCurrent && !failed);
+}
+
+/** The selected repository a name stands for, as the selection spells it, whatever the case; "all" as it is, null for any other name. */
+export function matchRepo(requested: string | undefined, repos: string[]): string | null {
+  if (!requested) return null;
+  if (requested === ALL_REPOS) return ALL_REPOS;
+  return repos.find((repo) => repo.toLowerCase() === requested.toLowerCase()) ?? null;
 }
 
 export interface ErrorSources {

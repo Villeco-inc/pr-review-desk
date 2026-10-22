@@ -393,6 +393,19 @@ describe("pull request cache", () => {
     expect(refresher.freshness([repo])).toMatchObject({ fetchedAt: null, error: "gh: HTTP 401" });
   });
 
+  it("reports a list that cannot be stored as a failed refresh, even when nothing had failed before", async () => {
+    const repo = "Villeco-inc/linea-web";
+    const refresher = createPrRefresher({
+      db: openDb(),
+      fetchPrs: async (r) => [{ ...pr(r, "v1"), additions: BigInt(10) as unknown as number }],
+      selected: () => [],
+    });
+
+    await expect(refresher.list([repo], true)).rejects.toThrow("BigInt");
+
+    expect(refresher.freshness([repo])).toMatchObject({ fetchedAt: null, error: expect.stringContaining("BigInt") });
+  });
+
   it("waits for every repository on a forced refresh before reporting a failure", async () => {
     const web = "Villeco-inc/linea-web";
     const mobile = "Villeco-inc/linea-mobile";

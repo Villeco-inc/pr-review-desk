@@ -290,7 +290,7 @@ const compareIndexRoute = createRoute({
 function CompareIndexPage() {
   const { data: repos } = useQuery<string[]>("/api/repos");
   const go = useGo();
-  const first = repos?.find((r) => !r.startsWith("org:"));
+  const first = repos?.[0];
   useEffect(() => {
     if (first) go.compare(first, {}, { replace: true });
   }, [first, go]);

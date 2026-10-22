@@ -73,7 +73,7 @@ The review compares **commits**: `base...branch` in that checkout. Work that is 
 ## Using it
 
 - **Pull requests**: pick a repository (or **All selected repos**), filter by author, status or label, open a PR, choose a model and an effort level, then **Start review**. Findings arrive sorted by severity.
-- **Always fresh**: while the app is open, the server asks GitHub for your repositories' pull requests every 90 seconds, and once at startup. The line under the title says how long ago that was, and says so when the last refresh failed. **Refresh** asks GitHub right away. The server stops asking after 10 minutes without a visit.
+- **Always fresh**: while the app is open, the server asks GitHub for your repositories' pull requests every 90 seconds, and once at startup. The line under the title says how long ago that was, and says so when the last refresh failed. **Refresh** asks GitHub right away. After 10 minutes without a visit it slows down to one refresh every 30 minutes, and a page opened or come back to after a while refreshes at once.
 - **Findings**: each one shows the background, the problem and a suggested fix, next to the diff. Edit the suggested comment, then post it inline or as a PR comment, or dismiss it.
 - **Local branches**: pick a checkout, a branch and a base, then review. You get a **Copy fix prompt** to hand the findings to your coding agent.
 - **Sessions**: the **Session** button on a review shows the latest run of the agent: model, turns, duration, tokens, cost, the full prompt and every event it streamed. Earlier runs are one click away.

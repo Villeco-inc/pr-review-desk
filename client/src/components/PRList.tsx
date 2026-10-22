@@ -17,7 +17,7 @@ import { ShellActions, useRailCount } from "./AppShell";
 import { focusedAttr, moveFocus, useHotkeys } from "../hooks/useHotkeys";
 import { describePrListError } from "../lib/github-errors";
 import { describeFreshness, freshnessPollMs } from "../lib/freshness";
-import { isListLoading, shownError } from "../lib/list-state";
+import { isListLoading, matchRepo, shownError } from "../lib/list-state";
 import { useNow } from "../hooks/useNow";
 import { useHardRefreshOnReturn } from "../hooks/useHardRefreshOnReturn";
 import { savePrOrder, type PrListSearch, type SortKey, type SortDir } from "../lib/url-state";
@@ -104,16 +104,17 @@ export default function PRList({
     }
   };
 
-  const knownRepo = (r: string | undefined) => !!r && (r === ALL_REPOS || (repos ?? []).includes(r));
   // Nothing is asked for until the selection is known: a remembered repository may no longer be one.
-  const repo = repos ? (knownRepo(search.repo) ? search.repo! : repos[0] ?? "") : "";
+  const matched = repos ? matchRepo(search.repo, repos) : null;
+  const repo = repos ? matched ?? repos[0] ?? "" : "";
   const isAllView = repo === ALL_REPOS;
 
-  // Write the effective repo into the URL once the repo list is known. A remembered repo that is
-  // no longer configured is dropped silently, and its replacement brings its own filters.
+  // Write the effective repo into the URL once the repo list is known. The same repo spelled in another case
+  // keeps its filters; a remembered repo that is no longer configured is dropped silently, and its
+  // replacement brings its own filters.
   useEffect(() => {
     if (!repos || !repo || search.repo === repo) return;
-    if (search.repo === undefined) onSearchChange({ ...search, repo });
+    if (search.repo === undefined || matched) onSearchChange({ ...search, repo });
     else onRepoChange(repo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repos, repo, search.repo]);
@@ -148,7 +149,7 @@ export default function PRList({
   const prsKey = repo ? `/api/prs?repo=${encodeURIComponent(repo)}` : null;
   const { data: prs, dataKey, loading: listLoading, error: listError } = useQuery<PullRequestDto[]>(
     freshness ? prsKey : null,
-    [repo, refreshKey, freshness?.version],
+    [repo, freshness?.version],
     0
   );
   const error = shownError({ hasRepos: !!repos, reposError, listError, freshnessError, hasFreshness: !!freshness });

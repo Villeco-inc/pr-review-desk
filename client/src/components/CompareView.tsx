@@ -37,8 +37,7 @@ export default function CompareView({
   onBackToList: () => void;
 }) {
   const { data: repos } = useQuery<string[]>("/api/repos");
-  const githubRepos = (repos ?? []).filter((r) => !r.startsWith("org:"));
-  const unknownRepo = !!repos && !githubRepos.includes(repo);
+  const unknownRepo = !!repos && !repos.includes(repo);
   const { data: refs, error: refsError, loading: refsLoading } = useQuery<RepoRefsDto>(
     unknownRepo ? null : `/api/compare/refs?repo=${encodeURIComponent(repo)}`,
     [repo],
@@ -128,7 +127,7 @@ export default function CompareView({
       <Card className="flex flex-col">
         <div className="flex flex-wrap items-center gap-2 edge-b px-5 py-3.5">
           <Select id="compare-repo" icon="repo" wrapperClassName="w-64" value={repo} onChange={(e) => onRepoChange(e.target.value)} aria-label="Repository">
-            {githubRepos.map((r) => (
+            {(repos ?? []).map((r) => (
               <option key={r} value={r}>
                 {r}
               </option>

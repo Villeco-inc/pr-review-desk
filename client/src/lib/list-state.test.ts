@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { isListLoading, shownError } from "./list-state";
+import { isListLoading, matchRepo, shownError } from "./list-state";
+
+describe("matchRepo", () => {
+  const repos = ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"];
+
+  it("finds the selected repository whatever the case of the name asked for, and gives it as the selection spells it", () => {
+    expect(matchRepo("villeco-inc/LINEA-web", repos)).toBe("Villeco-inc/linea-web");
+    expect(matchRepo("Villeco-inc/linea-mobile", repos)).toBe("Villeco-inc/linea-mobile");
+  });
+
+  it("keeps « all » as it is", () => {
+    expect(matchRepo("all", repos)).toBe("all");
+  });
+
+  it("finds nothing for a repository that is not selected, or none asked for", () => {
+    expect(matchRepo("Villeco-inc/other", repos)).toBeNull();
+    expect(matchRepo(undefined, repos)).toBeNull();
+    expect(matchRepo("", repos)).toBeNull();
+  });
+});
 
 const loaded = { repo: "Villeco-inc/linea-web", rowsAreCurrent: true, listLoading: false, failed: false, waitingForRepos: false };
 
