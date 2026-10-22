@@ -102,6 +102,88 @@ describe("useQuery", () => {
     expect(calls).toHaveLength(3);
   });
 
+  it("does not start a quiet reload while a deliberate load is still on its way, and polls again once it is over", async () => {
+    let release!: () => void;
+    const slow = new Promise<Response>((resolve) => {
+      release = () => resolve(ok(["A"]));
+    });
+    const calls = stubNetwork({ "/api/slow": () => slow });
+    const { result } = renderHook(() => useQuery<string[]>("/api/slow", [], 0, 10_000));
+    await flush();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(calls).toEqual(["/api/slow"]);
+    expect(result.current.loading).toBe(true);
+
+    release();
+    await flush();
+    expect(result.current.data).toEqual(["A"]);
+    expect(result.current.loading).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(calls).toEqual(["/api/slow", "/api/slow"]);
+  });
+
+  it("gives up on a load the server never answers, says so, and polls again", async () => {
+    let answering = false;
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string, init?: RequestInit) => {
+        calls.push(input);
+        if (answering) return Promise.resolve(ok(["A"]));
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        });
+      })
+    );
+    const { result } = renderHook(() => useQuery<string[]>("/api/hung", [], 0, 10_000));
+    await flush();
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(59_999);
+    });
+    expect(result.current.loading).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBe("The server did not answer in time");
+
+    answering = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(result.current.data).toEqual(["A"]);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("polls the new url when it moves to one shown from the cache while the previous load never ended", async () => {
+    const routes: Record<string, Route> = { "/api/b": () => ok(["B"]), "/api/a": () => new Promise<Response>(() => {}) };
+    const calls = stubNetwork(routes);
+    const first = renderHook(() => useQuery<string[]>("/api/b", [], 60_000, 10_000));
+    await flush();
+    first.unmount();
+    calls.length = 0;
+
+    const { rerender, result } = renderHook(({ url }) => useQuery<string[]>(url, [], 60_000, 10_000), { initialProps: { url: "/api/a" } });
+    await flush();
+    expect(result.current.loading).toBe(true);
+
+    rerender({ url: "/api/b" });
+    await flush();
+    expect(result.current.data).toEqual(["B"]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(calls).toEqual(["/api/a", "/api/b"]);
+  });
+
   it("asks again at once when the tab becomes visible, not while it is hidden", async () => {
     const routes: Record<string, Route> = { "/api/a": () => ok(["old"]) };
     const calls = stubNetwork(routes);

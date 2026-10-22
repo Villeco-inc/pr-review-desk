@@ -11,6 +11,9 @@ interface QueryState<T> {
 
 const queryCache = new Map<string, { data: unknown; ts: number }>();
 const DEFAULT_STALE_MS = 30_000;
+// A read the server never answers would keep its load, and the polling behind it, waiting for ever.
+const LOAD_TIMEOUT_MS = 60_000;
+const TIMEOUT_MESSAGE = "The server did not answer in time";
 
 function cacheKey(url: string): string {
   return url.replace(/[&?]_=\d+/, "");
@@ -39,24 +42,37 @@ export function useQuery<T>(
     error: null,
   });
   const requestId = useRef(0);
+  const loadingId = useRef<number | null>(null);
 
   const run = useCallback(
     (quiet: boolean) => {
       if (!url) return;
+      // A quiet reload would take over from the deliberate load, which then never reports its end or its error.
+      if (quiet && loadingId.current !== null) return;
       const id = ++requestId.current;
-      if (!quiet) setState((prev) => ({ ...prev, loading: true, error: null }));
-      fetchJson<T>(url)
+      if (!quiet) {
+        loadingId.current = id;
+        setState((prev) => ({ ...prev, loading: true, error: null }));
+      }
+      const controller = new AbortController();
+      const giveUp = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
+      fetchJson<T>(url, { signal: controller.signal })
         .then((data) => {
           if (requestId.current === id) {
             const k = cacheKey(url);
             queryCache.set(k, { data, ts: Date.now() });
+            loadingId.current = null;
             setState({ data, dataKey: k, loading: false, error: null });
           }
         })
         .catch((err: Error) => {
           // A quiet reload that fails keeps what is on screen; only a deliberate load reports the error.
-          if (requestId.current === id && !quiet) setState((prev) => ({ ...prev, loading: false, error: err.message }));
-        });
+          if (requestId.current === id && !quiet) {
+            loadingId.current = null;
+            setState((prev) => ({ ...prev, loading: false, error: controller.signal.aborted ? TIMEOUT_MESSAGE : err.message }));
+          }
+        })
+        .finally(() => clearTimeout(giveUp));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [url]
@@ -80,6 +96,7 @@ export function useQuery<T>(
   useEffect(() => {
     if (cached && Date.now() - cached.ts < staleMs) {
       requestId.current += 1; // a reply still in flight belongs to the previous url
+      loadingId.current = null;
       setState({ data: cached.data as T, dataKey: key, loading: false, error: null });
       return;
     }
