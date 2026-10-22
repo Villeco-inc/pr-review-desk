@@ -81,6 +81,25 @@ describe("view memory, pull request list", () => {
     expect(readViewMemory(db, SELECTION).prs.repo).toBe("Villeco-inc/linea-web");
   });
 
+  it("serves the repository and its filters under the spelling the selection has now, when the case changed since", () => {
+    const db = openDb();
+    rememberPrView(db, ["villeco-inc/linea-web"], "villeco-inc/linea-web", { author: ["bob"] });
+
+    expect(readViewMemory(db, ["Villeco-inc/linea-web"]).prs).toEqual({
+      repo: "Villeco-inc/linea-web",
+      filters: { "Villeco-inc/linea-web": { author: ["bob"] } },
+    });
+  });
+
+  it("keeps the latest filters of a repository whose case changed twice, not an older spelling's", () => {
+    const db = openDb();
+    rememberPrView(db, ["Villeco-inc/linea-web"], "Villeco-inc/linea-web", { author: ["old"] });
+    rememberPrView(db, ["villeco-inc/linea-web"], "villeco-inc/linea-web", { author: ["mid"] });
+    rememberPrView(db, ["Villeco-inc/linea-web"], "Villeco-inc/linea-web", { author: ["newest"] });
+
+    expect(readViewMemory(db, ["Villeco-inc/linea-web"]).prs.filters).toEqual({ "Villeco-inc/linea-web": { author: ["newest"] } });
+  });
+
   it("refuses a repository that is not selected and keeps what it had", () => {
     const db = openDb();
     rememberPrView(db, SELECTION, "Villeco-inc/linea-web", { author: ["bob"] });
@@ -131,6 +150,15 @@ describe("view memory, compare", () => {
     rememberCompare(db, SELECTION, web, "feat/x");
     rememberCompare(db, SELECTION, mobile, "feat/y");
     expect(readViewMemory(db, SELECTION).compare).toEqual({ repo: mobile, heads: { [web]: "feat/x", [mobile]: "feat/y" } });
+  });
+
+  it("keeps the latest head of a repository whose case changed twice, not an older spelling's", () => {
+    const db = openDb();
+    rememberCompare(db, [web], web, "feat/old");
+    rememberCompare(db, [web.toLowerCase()], web.toLowerCase(), "feat/mid");
+    rememberCompare(db, [web], web, "feat/newest");
+
+    expect(readViewMemory(db, [web]).compare).toEqual({ repo: web, heads: { [web]: "feat/newest" } });
   });
 
   it("keeps a repository's head when it is remembered again without one", () => {

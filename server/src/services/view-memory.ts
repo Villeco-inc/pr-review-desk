@@ -124,15 +124,21 @@ export function forgetLocalSelection(db: Database.Database, label: string): void
   save(db, memory);
 }
 
+/** How the list names a repository: "all" as it is, a selected repository as the selection spells it, null for any other. */
+function listKey(repo: string, selected: string[]): string | null {
+  const scope = scopeOf(repo, selected);
+  return scope ? (repo === ALL_REPOS ? ALL_REPOS : scope[0]) : null;
+}
+
 /** The memory as it can be used now: repositories that left the selection are not served. */
 export function readViewMemory(db: Database.Database, selected: string[]): ViewMemory {
   const memory = load(db);
   const filters: Record<string, Fields> = {};
   for (const [repo, value] of Object.entries(memory.prs.filters)) {
-    const scope = scopeOf(repo, selected);
-    if (scope) filters[repo === ALL_REPOS ? ALL_REPOS : scope[0]] = value;
+    const key = listKey(repo, selected);
+    if (key) filters[key] = value;
   }
-  const repo = memory.prs.repo !== null && scopeOf(memory.prs.repo, selected) ? memory.prs.repo : null;
+  const repo = memory.prs.repo === null ? null : listKey(memory.prs.repo, selected);
   const heads: Record<string, string> = {};
   for (const [name, head] of Object.entries(memory.compare.heads)) {
     const selectedName = selectedRepoNamed(name, selected);
@@ -148,17 +154,23 @@ export function rememberCompare(db: Database.Database, selected: string[], repo:
   if (!name) throw new Error(`${repo} is not a selected repository`);
   const memory = load(db);
   memory.compare.repo = name;
+  // An older spelling of the same repository would otherwise keep a head that outlives the one just written.
+  for (const other of Object.keys(memory.compare.heads)) {
+    if (other !== name && selectedRepoNamed(other, selected) === name) delete memory.compare.heads[other];
+  }
   if (isHead(head)) memory.compare.heads[name] = head;
   save(db, memory);
 }
 
 /** Remembers the repository the list shows and its filters; only "all" or a selected repository is accepted. */
 export function rememberPrView(db: Database.Database, selected: string[], repo: string, filters: unknown): void {
-  const scope = scopeOf(repo, selected);
-  if (!scope) throw new Error(`${repo} is not a selected repository`);
-  const key = repo === ALL_REPOS ? ALL_REPOS : scope[0];
+  const key = listKey(repo, selected);
+  if (!key) throw new Error(`${repo} is not a selected repository`);
   const memory = load(db);
   memory.prs.repo = key;
+  for (const other of Object.keys(memory.prs.filters)) {
+    if (other !== key && listKey(other, selected) === key) delete memory.prs.filters[other];
+  }
   memory.prs.filters[key] = sanitizeFilters(filters);
   save(db, memory);
 }
