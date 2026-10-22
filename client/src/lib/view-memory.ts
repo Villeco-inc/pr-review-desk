@@ -29,10 +29,11 @@ export function resetViewMemory(): void {
   pending.clear();
   clearTimeout(writeTimer);
   sending = Promise.resolve();
+  refreshing = false;
+  inFlight = 0;
 }
 
-/** Loads the memory; a server that cannot be reached, or does not answer in time, leaves it empty rather than blocking the app. */
-export async function loadViewMemory(timeoutMs = LOAD_TIMEOUT_MS): Promise<void> {
+async function fetchStored(timeoutMs: number): Promise<Stored | null> {
   let giveUp: ReturnType<typeof setTimeout> | undefined;
   const timedOut = new Promise<null>((resolve) => {
     giveUp = setTimeout(() => resolve(null), timeoutMs);
@@ -40,12 +41,41 @@ export async function loadViewMemory(timeoutMs = LOAD_TIMEOUT_MS): Promise<void>
   const answer = fetchJson<Stored>("/api/view-memory").catch(() => null);
   const stored = await Promise.race([answer, timedOut]);
   clearTimeout(giveUp);
-  if (!stored) return;
+  return stored;
+}
+
+function adopt(stored: Stored): void {
   memory = {
     prs: { repo: stored.prs?.repo ?? undefined, filters: stored.prs?.filters ?? {} },
     local: { label: stored.local?.label ?? undefined, selection: stored.local?.selection ?? {} },
     compare: { repo: stored.compare?.repo ?? undefined, heads: stored.compare?.heads ?? {} },
   };
+}
+
+/** Loads the memory; a server that cannot be reached, or does not answer in time, leaves it empty rather than blocking the app. */
+export async function loadViewMemory(timeoutMs = LOAD_TIMEOUT_MS): Promise<void> {
+  const stored = await fetchStored(timeoutMs);
+  if (stored) adopt(stored);
+}
+
+// Counts what this tab changed or finished sending, so an answer that was asked for before it can be told apart.
+let changes = 0;
+let inFlight = 0;
+let refreshing = false;
+
+const settled = () => pending.size === 0 && inFlight === 0;
+
+/** Takes up what other tabs saved meanwhile. What this tab changed, or is still sending, is newer and stays. */
+export async function refreshViewMemory(): Promise<void> {
+  if (refreshing || !settled()) return;
+  refreshing = true;
+  const asked = changes;
+  try {
+    const stored = await fetchStored(LOAD_TIMEOUT_MS);
+    if (stored && changes === asked && settled()) adopt(stored);
+  } finally {
+    refreshing = false;
+  }
 }
 
 const own = (fields: Record<string, Fields>, key: string): Fields | undefined => (Object.hasOwn(fields, key) ? fields[key] : undefined);
@@ -59,6 +89,7 @@ let writeTimer: ReturnType<typeof setTimeout> | undefined;
 let sending: Promise<void> = Promise.resolve();
 
 function queue(key: string, send: () => Promise<unknown>): void {
+  changes++;
   pending.delete(key);
   pending.set(key, send);
   clearTimeout(writeTimer);
@@ -74,15 +105,25 @@ function take(): Array<() => Promise<unknown>> {
 function flush(): Promise<void> {
   clearTimeout(writeTimer);
   sending = sending.then(async () => {
-    for (const send of take()) await send().catch(() => {});
+    for (const send of take()) await dispatch(send);
   });
   return sending;
+}
+
+function dispatch(send: () => Promise<unknown>): Promise<void> {
+  inFlight++;
+  return send()
+    .catch(() => {})
+    .then(() => {
+      inFlight--;
+      changes++;
+    });
 }
 
 // A page that is going away cannot wait for an answer: everything goes out at once, in order.
 function flushNow(): void {
   clearTimeout(writeTimer);
-  for (const send of take()) void send().catch(() => {});
+  for (const send of take()) void dispatch(send);
 }
 
 const write = (url: string, method: "PUT" | "DELETE", body?: unknown) => () =>
@@ -133,3 +174,10 @@ export const localMemory = {
 
 // The page may be gone before the wait is over: what is pending goes out now, and keepalive lets it finish.
 if (typeof window !== "undefined" && typeof window.addEventListener === "function") window.addEventListener("pagehide", flushNow);
+
+// A tab that was away, or beside another one, may hold a copy that others have left behind.
+if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+  const refresh = () => void refreshViewMemory();
+  window.addEventListener("focus", refresh);
+  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && refresh());
+}

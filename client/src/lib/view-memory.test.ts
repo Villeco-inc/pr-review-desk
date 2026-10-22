@@ -189,6 +189,101 @@ describe("remembering a local selection", () => {
   });
 });
 
+describe("coming back to a tab", () => {
+  const web = "Villeco-inc/linea-web";
+  const held = (head: string) => ({
+    prs: { repo: null, filters: {} },
+    local: { label: null, selection: {} },
+    compare: { repo: web, heads: { [web]: head } },
+  });
+
+  async function loadedWith(head: string) {
+    stubNetwork(() => ok(held(head)));
+    await loadViewMemory();
+  }
+
+  it("serves what another tab saved since, when the tab becomes visible again", async () => {
+    await loadedWith("feat/x");
+    stubNetwork(() => ok(held("feat/y")));
+
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(compareMemory.head(web)).toBe("feat/y");
+  });
+
+  it("serves it as well when the window gets the focus back while still visible", async () => {
+    await loadedWith("feat/x");
+    stubNetwork(() => ok(held("feat/y")));
+
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(compareMemory.head(web)).toBe("feat/y");
+  });
+
+  it("keeps a change of this tab that is still waiting to be sent", async () => {
+    await loadedWith("feat/x");
+    compareMemory.remember(web, "feat/z");
+    stubNetwork(() => ok(held("feat/y")));
+
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(compareMemory.head(web)).toBe("feat/z");
+  });
+
+  it("drops an answer that was overtaken by a change made while it was on its way", async () => {
+    await loadedWith("feat/x");
+    let answer!: () => void;
+    const slow = new Promise<Response>((resolve) => {
+      answer = () => resolve(ok(held("feat/y")));
+    });
+    stubNetwork((call) => (call.method === "GET" ? slow : ok(null)));
+
+    window.dispatchEvent(new Event("focus"));
+    compareMemory.remember(web, "feat/z");
+    answer();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(compareMemory.head(web)).toBe("feat/z");
+  });
+
+  it("keeps a change that is on its way to the server, which may not have applied it yet", async () => {
+    await loadedWith("feat/x");
+    compareMemory.remember(web, "feat/z");
+    stubNetwork((call) => (call.method === "PUT" ? new Promise<Response>(() => {}) : ok(held("feat/y"))));
+    await vi.advanceTimersByTimeAsync(500);
+
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(compareMemory.head(web)).toBe("feat/z");
+  });
+
+  it("drops an answer asked for before a change that has been sent since", async () => {
+    await loadedWith("feat/x");
+    let answer!: () => void;
+    const slow = new Promise<Response>((resolve) => {
+      answer = () => resolve(ok(held("feat/y")));
+    });
+    stubNetwork((call) => (call.method === "GET" ? slow : ok(null)));
+
+    window.dispatchEvent(new Event("focus"));
+    compareMemory.remember(web, "feat/z");
+    await vi.advanceTimersByTimeAsync(500);
+    answer();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(compareMemory.head(web)).toBe("feat/z");
+  });
+
+  it("keeps what it has when the server cannot be reached", async () => {
+    await loadedWith("feat/x");
+    stubNetwork(() => {
+      throw new Error("offline");
+    });
+
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(compareMemory.head(web)).toBe("feat/x");
+  });
+});
+
 describe("leaving and failing", () => {
   const web = "Villeco-inc/linea-web";
 
