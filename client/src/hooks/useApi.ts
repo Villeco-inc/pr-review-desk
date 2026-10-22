@@ -25,12 +25,17 @@ export function invalidateCache(prefix: string) {
   }
 }
 
-/** With `pollMs`, the query reloads quietly on that period while the tab is visible; a function picks the period (0 for none) from the last answer or error. */
+/**
+ * With `pollMs`, the query reloads quietly on that period while the tab is visible; a function picks the period
+ * (0 for none) from the last answer or error. A change of `quietDeps` alone reloads quietly too, when the rows of
+ * that url are on screen: nothing is waited for, so no load is shown. Any other change shows the load.
+ */
 export function useQuery<T>(
   url: string | null,
   deps: unknown[] = [],
   staleMs = DEFAULT_STALE_MS,
-  pollMs?: number | ((data: T | null, error: string | null) => number)
+  pollMs?: number | ((data: T | null, error: string | null) => number),
+  quietDeps: unknown[] = []
 ) {
   const key = url ? cacheKey(url) : null;
   const cached = key ? queryCache.get(key) : null;
@@ -45,7 +50,7 @@ export function useQuery<T>(
   const loadingId = useRef<number | null>(null);
 
   const run = useCallback(
-    (quiet: boolean) => {
+    (quiet: boolean, reportFailure = false) => {
       if (!url) return;
       // A quiet reload would take over from the deliberate load, which then never reports its end or its error.
       if (quiet && loadingId.current !== null) return;
@@ -66,9 +71,10 @@ export function useQuery<T>(
           }
         })
         .catch((err: Error) => {
-          // A quiet reload that fails keeps what is on screen; only a deliberate load reports the error.
-          if (requestId.current === id && !quiet) {
-            loadingId.current = null;
+          // A polled reload that fails keeps what is on screen and says nothing; a deliberate load, or a quiet one
+          // that was asked for because the rows are behind, reports the error (the rows stay).
+          if (requestId.current === id && (!quiet || reportFailure)) {
+            if (!quiet) loadingId.current = null;
             setState((prev) => ({ ...prev, loading: false, error: controller.signal.aborted ? TIMEOUT_MESSAGE : err.message }));
           }
         })
@@ -93,16 +99,22 @@ export function useQuery<T>(
     };
   }, [period, url, run]);
 
+  const previousDeps = useRef<unknown[] | null>(null);
   useEffect(() => {
+    const before = previousDeps.current;
+    previousDeps.current = deps;
     if (cached && Date.now() - cached.ts < staleMs) {
       requestId.current += 1; // a reply still in flight belongs to the previous url
       loadingId.current = null;
       setState({ data: cached.data as T, dataKey: key, loading: false, error: null });
       return;
     }
-    refetch();
+    const onlyQuietChanged = !!before && before.length === deps.length && before.every((d, i) => Object.is(d, deps[i]));
+    // Rows of this very url on screen mean the url did not change either.
+    const quiet = onlyQuietChanged && state.dataKey === key && loadingId.current === null;
+    run(quiet, quiet);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, ...deps]);
+  }, [url, ...deps, ...quietDeps]);
 
   return { ...state, refetch };
 }

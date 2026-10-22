@@ -74,6 +74,68 @@ describe("usePrList", () => {
     expect(listReads(calls)).toBe(2);
   });
 
+  it("reads the list again without showing a load when only the version changes, and with one when the repository does", async () => {
+    let version = "v1";
+    let hold: (() => void) | null = null;
+    const answers: Record<string, Route> = {
+      [FRESHNESS]: () => ok(freshness(version)),
+      [PRS]: () => ok([{ number: 1 }]),
+    };
+    const calls = stubNetwork(answers);
+    const { result, rerender } = renderHook(({ repo }) => usePrList(repo, 0), { initialProps: { repo: REPO } });
+    await flush();
+    expect(result.current.prs).toEqual([{ number: 1 }]);
+
+    const other = "Villeco-inc/villeco";
+    const slow = new Promise<Response>((resolve) => {
+      hold = () => resolve(ok([{ number: 2 }]));
+    });
+    answers[PRS] = () => slow as unknown as Response;
+    version = "v2";
+    await wait(10_000);
+    expect(listReads(calls)).toBe(2);
+    expect(result.current.listLoading).toBe(false);
+    expect(result.current.prs).toEqual([{ number: 1 }]);
+
+    hold!();
+    await flush();
+    expect(result.current.prs).toEqual([{ number: 2 }]);
+
+    answers[`/api/freshness?repo=${encodeURIComponent(other)}`] = () => ok(freshness("w1"));
+    answers[`/api/prs?repo=${encodeURIComponent(other)}`] = () => new Promise<Response>(() => {}) as unknown as Response;
+    rerender({ repo: other });
+    await flush();
+    expect(result.current.listLoading).toBe(true);
+  });
+
+  it("shows the failure of the reload that follows a new version, then tries again by itself and on Refresh", async () => {
+    let version = "v1";
+    let answering = true;
+    const calls = stubNetwork({
+      [FRESHNESS]: () => ok(freshness(version)),
+      [PRS]: () => (answering ? ok([{ number: version === "v1" ? 1 : 2 }]) : failure()),
+    });
+    const { result, rerender } = renderHook(({ key }) => usePrList(REPO, key), { initialProps: { key: 0 } });
+    await flush();
+    expect(result.current.prs).toEqual([{ number: 1 }]);
+
+    answering = false;
+    version = "v2";
+    await wait(10_000);
+    expect(result.current.listError).toBe("Bad Gateway");
+    expect(result.current.prs).toEqual([{ number: 1 }]);
+
+    const reads = listReads(calls);
+    rerender({ key: 1 });
+    await flush();
+    expect(listReads(calls)).toBe(reads + 1);
+
+    answering = true;
+    await wait(10_000);
+    expect(result.current.listError).toBeNull();
+    expect(result.current.prs).toEqual([{ number: 2 }]);
+  });
+
   it("does not read a list that loaded fine again when a refresh brings the same version", async () => {
     const calls = stubNetwork({ [FRESHNESS]: () => ok(freshness("v1")), [PRS]: () => ok([{ number: 1 }]) });
     const { rerender } = renderHook(({ key }) => usePrList(REPO, key), { initialProps: { key: 0 } });

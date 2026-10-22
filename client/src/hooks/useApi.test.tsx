@@ -184,6 +184,132 @@ describe("useQuery", () => {
     expect(calls).toEqual(["/api/a", "/api/b"]);
   });
 
+  describe("a dependency that only asks for a quiet reload", () => {
+    const gated = (data: string[]) => {
+      let release!: () => void;
+      const answer = new Promise<Response>((resolve) => {
+        release = () => resolve(ok(data));
+      });
+      return { answer, release };
+    };
+
+    it("reloads without showing a load when the data of that same url is on screen", async () => {
+      const routes: Record<string, Route> = { "/api/a": () => ok(["A1"]) };
+      const calls = stubNetwork(routes);
+      const { result, rerender } = renderHook(({ v }) => useQuery<string[]>("/api/a", [], 0, undefined, [v]), { initialProps: { v: 1 } });
+      await flush();
+      expect(result.current.data).toEqual(["A1"]);
+
+      const second = gated(["A2"]);
+      routes["/api/a"] = () => second.answer;
+      rerender({ v: 2 });
+      await flush();
+      expect(calls).toHaveLength(2);
+      expect(result.current.loading).toBe(false);
+      expect(result.current.data).toEqual(["A1"]);
+
+      second.release();
+      await flush();
+      expect(result.current.data).toEqual(["A2"]);
+      expect(result.current.loading).toBe(false);
+    });
+
+    it("shows the error, and keeps the rows, when that quiet reload fails, since the rows are known to be behind", async () => {
+      const routes: Record<string, Route> = { "/api/a": () => ok(["A1"]) };
+      stubNetwork(routes);
+      const { result, rerender } = renderHook(({ v }) => useQuery<string[]>("/api/a", [], 0, undefined, [v]), { initialProps: { v: 1 } });
+      await flush();
+
+      routes["/api/a"] = () => failure("Bad Gateway");
+      rerender({ v: 2 });
+      await flush();
+      expect(result.current.error).toBe("Bad Gateway");
+      expect(result.current.data).toEqual(["A1"]);
+      expect(result.current.loading).toBe(false);
+    });
+
+    it("still shows the load when the url changes", async () => {
+      const routes: Record<string, Route> = { "/api/a": () => ok(["A"]), "/api/b": () => new Promise<Response>(() => {}) };
+      stubNetwork(routes);
+      const { result, rerender } = renderHook(({ url }) => useQuery<string[]>(url, [], 0, undefined, [1]), { initialProps: { url: "/api/a" } });
+      await flush();
+
+      rerender({ url: "/api/b" });
+      await flush();
+      expect(result.current.loading).toBe(true);
+    });
+
+    it("still shows the load when an ordinary dependency changes", async () => {
+      const routes: Record<string, Route> = { "/api/a": () => ok(["A1"]) };
+      stubNetwork(routes);
+      const { result, rerender } = renderHook(({ x }) => useQuery<string[]>("/api/a", [x], 0, undefined, [1]), { initialProps: { x: 1 } });
+      await flush();
+
+      routes["/api/a"] = () => new Promise<Response>(() => {});
+      rerender({ x: 2 });
+      await flush();
+      expect(result.current.loading).toBe(true);
+    });
+
+    it("shows the load when nothing of that url is on screen yet, as after a first load that failed", async () => {
+      const routes: Record<string, Route> = { "/api/a": () => failure("Bad Gateway") };
+      stubNetwork(routes);
+      const { result, rerender } = renderHook(({ v }) => useQuery<string[]>("/api/a", [], 0, undefined, [v]), { initialProps: { v: 1 } });
+      await flush();
+      expect(result.current.error).toBe("Bad Gateway");
+
+      routes["/api/a"] = () => new Promise<Response>(() => {});
+      rerender({ v: 2 });
+      await flush();
+      expect(result.current.loading).toBe(true);
+    });
+
+    it("loads visibly, replacing the one in flight, when it changes while rows are on screen and another load is on its way", async () => {
+      const second = gated(["second"]);
+      const third = gated(["third"]);
+      const answers = [Promise.resolve(ok(["first"])), second.answer, third.answer];
+      const calls = stubNetwork({ "/api/a": () => answers.shift()! as unknown as Response });
+      const { result, rerender } = renderHook(({ x, v }) => useQuery<string[]>("/api/a", [x], 0, undefined, [v]), { initialProps: { x: 1, v: 1 } });
+      await flush();
+      expect(result.current.data).toEqual(["first"]);
+
+      rerender({ x: 2, v: 1 });
+      await flush();
+      expect(calls).toHaveLength(2);
+      expect(result.current.loading).toBe(true);
+
+      rerender({ x: 2, v: 2 });
+      await flush();
+      expect(calls).toHaveLength(3);
+      expect(result.current.loading).toBe(true);
+
+      third.release();
+      await flush();
+      expect(result.current.data).toEqual(["third"]);
+      expect(result.current.loading).toBe(false);
+    });
+
+    it("loads visibly, replacing the one in flight, when it changes during a load that is not over", async () => {
+      const first = gated(["first"]);
+      const second = gated(["second"]);
+      const answers = [first.answer, second.answer];
+      const calls = stubNetwork({ "/api/a": () => answers.shift()! });
+      const { result, rerender } = renderHook(({ v }) => useQuery<string[]>("/api/a", [], 0, undefined, [v]), { initialProps: { v: 1 } });
+      await flush();
+      expect(result.current.loading).toBe(true);
+
+      rerender({ v: 2 });
+      await flush();
+      expect(calls).toHaveLength(2);
+      expect(result.current.loading).toBe(true);
+
+      second.release();
+      await flush();
+      expect(result.current.data).toEqual(["second"]);
+      expect(result.current.loading).toBe(false);
+    });
+  });
+
   it("asks again at once when the tab becomes visible, not while it is hidden", async () => {
     const routes: Record<string, Route> = { "/api/a": () => ok(["old"]) };
     const calls = stubNetwork(routes);

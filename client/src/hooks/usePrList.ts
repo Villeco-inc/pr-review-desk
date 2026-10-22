@@ -7,9 +7,9 @@ const RETRY_FAILED_LIST_MS = 10_000;
 
 /**
  * The cheap question comes first: the list is loaded once its freshness has answered, and again whenever the
- * server's data or the reviews on it changed (the version). A list that failed does not wait for that: the
- * version stays the same when GitHub gives the same pull requests, so it is tried again by itself, and at once
- * when a refresh is asked.
+ * server's data or the reviews on it changed (the version), quietly since the rows on screen are still good. A
+ * list that failed does not wait for that: the version stays the same when GitHub gives the same pull requests,
+ * so it is tried again by itself, and at once when a refresh is asked.
  */
 export function usePrList(repo: string, refreshKey: number) {
   const freshnessKey = repo ? `/api/freshness?repo=${encodeURIComponent(repo)}` : null;
@@ -17,8 +17,12 @@ export function usePrList(repo: string, refreshKey: number) {
   const freshness = data && dataKey === freshnessKey ? data : null;
 
   const prsKey = repo ? `/api/prs?repo=${encodeURIComponent(repo)}` : null;
-  const list = useQuery<PullRequestDto[]>(freshness ? prsKey : null, [repo, freshness?.version], 0, (_data, error) =>
-    error ? RETRY_FAILED_LIST_MS : 0
+  const list = useQuery<PullRequestDto[]>(
+    freshness ? prsKey : null,
+    [repo],
+    0,
+    (_data, error) => (error ? RETRY_FAILED_LIST_MS : 0),
+    [freshness?.version]
   );
 
   const lastRefresh = useRef(refreshKey);
