@@ -16,9 +16,10 @@ import { formatCount, relativeTime } from "../lib/format";
 import { ShellActions, useRailCount } from "./AppShell";
 import { focusedAttr, moveFocus, useHotkeys } from "../hooks/useHotkeys";
 import { describePrListError } from "../lib/github-errors";
-import { describeFreshness } from "../lib/freshness";
+import { describeFreshness, freshnessPollMs } from "../lib/freshness";
 import { isListLoading, shownError } from "../lib/list-state";
 import { useNow } from "../hooks/useNow";
+import { useHardRefreshOnReturn } from "../hooks/useHardRefreshOnReturn";
 import { savePrOrder, type PrListSearch, type SortKey, type SortDir } from "../lib/url-state";
 
 const TH = "h-10 whitespace-nowrap bg-subtle px-3 text-left label-caps text-fg-2 edge-b first:pl-4";
@@ -57,8 +58,8 @@ const REVIEW_RANK: Record<PullRequestDto["reviewStatus"], number> = {
 const canStartReview = (pr: PullRequestDto) =>
   pr.reviewStatus === "none" || pr.reviewStatus === "reported" || pr.reviewStatus === "failed";
 
-// The server keeps its cache fresh while the app is open; the page only asks how fresh it is, this often.
-const FRESHNESS_CHECK_MS = 10_000;
+// The server keeps its cache fresh; the page only asks how fresh it is (see freshnessPollMs), and keeps its age on screen current this often.
+const AGE_TICK_MS = 10_000;
 
 const allReposLabel = (count: number) => `All selected repos (${count})`;
 
@@ -124,9 +125,25 @@ export default function PRList({
     data: freshnessData,
     dataKey: freshnessDataKey,
     error: freshnessError,
-  } = useQuery<Freshness>(freshnessKey, [repo, refreshKey], 0, FRESHNESS_CHECK_MS);
+  } = useQuery<Freshness>(freshnessKey, [repo, refreshKey], 0, freshnessPollMs);
   const freshness = freshnessData && freshnessDataKey === freshnessKey ? freshnessData : null;
-  const now = useNow(FRESHNESS_CHECK_MS);
+  const now = useNow(AGE_TICK_MS);
+
+  // Asks GitHub now, then rereads the list. The cache a failed ask leaves behind still shows, dated by freshness.
+  const forceRefresh = useMutation<Freshness>("/api/refresh", "POST");
+  const refresh = async () => {
+    try {
+      await forceRefresh.mutate(undefined, `/api/refresh?repo=${encodeURIComponent(repo)}`);
+    } catch (err) {
+      toast({ kind: "error", message: describePrListError((err as Error).message) });
+    }
+    invalidateCache("/api/prs");
+    invalidateCache("/api/freshness");
+    setRefreshKey((k) => k + 1);
+  };
+  // A page opened on old data, or come back to after a long absence, does not wait for the server: it asks now.
+  useHardRefreshOnReturn(freshnessKey, () => void refresh(), forceRefresh.loading);
+  const refreshingNow = !!freshness?.refreshing || forceRefresh.loading;
 
   const prsKey = repo ? `/api/prs?repo=${encodeURIComponent(repo)}` : null;
   const { data: prs, dataKey, loading: listLoading, error: listError } = useQuery<PullRequestDto[]>(
@@ -140,8 +157,8 @@ export default function PRList({
   const loading = isListLoading({ repo, rowsAreCurrent, listLoading, failed: !!error, waitingForRepos: !repos && !reposError });
   const prsAreCurrent = rowsAreCurrent && !loading;
   // The age speaks for the rows on screen: it waits while they reload and while a reload failed.
-  const freshnessText = freshness ? describeFreshness(freshness, now) : null;
-  const freshnessStale = loading || !!listError;
+  const freshnessText = freshness ? describeFreshness({ ...freshness, refreshing: refreshingNow }, now) : null;
+  const freshnessStale = (loading || !!listError) && !refreshingNow;
   useRailCount("prs", prs?.length);
 
   const authorOptions = useMemo(
@@ -205,19 +222,7 @@ export default function PRList({
     onSearchChange({ ...search, sort: key, dir: sortKey === key && sortDir === "desc" ? "asc" : "desc" });
   };
 
-  // Asks GitHub now, then rereads the list. The cache a failed ask leaves behind still shows, dated by freshness.
-  const forceRefresh = useMutation<Freshness>("/api/refresh", "POST");
-  const refresh = async () => {
-    try {
-      await forceRefresh.mutate(undefined, `/api/refresh?repo=${encodeURIComponent(repo)}`);
-    } catch (err) {
-      toast({ kind: "error", message: describePrListError((err as Error).message) });
-    }
-    invalidateCache("/api/prs");
-    invalidateCache("/api/freshness");
-    setRefreshKey((k) => k + 1);
-  };
-  const refreshing = loading || forceRefresh.loading;
+  const refreshing = loading || refreshingNow;
 
   return (
     <main className="flex flex-col gap-5 px-10 pb-10 pt-7">

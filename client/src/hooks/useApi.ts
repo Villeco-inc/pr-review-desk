@@ -22,8 +22,13 @@ export function invalidateCache(prefix: string) {
   }
 }
 
-/** With `pollMs`, the query reloads quietly on that period while the tab is visible. */
-export function useQuery<T>(url: string | null, deps: unknown[] = [], staleMs = DEFAULT_STALE_MS, pollMs?: number) {
+/** With `pollMs`, the query reloads quietly on that period while the tab is visible; a function picks the period from the last answer. */
+export function useQuery<T>(
+  url: string | null,
+  deps: unknown[] = [],
+  staleMs = DEFAULT_STALE_MS,
+  pollMs?: number | ((data: T | null) => number)
+) {
   const key = url ? cacheKey(url) : null;
   const cached = key ? queryCache.get(key) : null;
 
@@ -58,18 +63,19 @@ export function useQuery<T>(url: string | null, deps: unknown[] = [], staleMs = 
   );
   const refetch = useCallback(() => run(false), [run]);
 
+  const period = typeof pollMs === "function" ? pollMs(state.data) : pollMs;
   useEffect(() => {
-    if (!pollMs || !url) return;
+    if (!period || !url) return;
     const reload = () => {
       if (document.visibilityState === "visible") run(true);
     };
-    const timer = setInterval(reload, pollMs);
+    const timer = setInterval(reload, period);
     document.addEventListener("visibilitychange", reload); // back on the tab: ask now, not at the next period
     return () => {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", reload);
     };
-  }, [pollMs, url, run]);
+  }, [period, url, run]);
 
   useEffect(() => {
     if (cached && Date.now() - cached.ts < staleMs) {

@@ -11,10 +11,21 @@ export interface PrRefresherDeps {
   refreshEveryMs?: () => number;
   /** How long after a client was last seen the refreshes go on, read again at every tick. */
   activeWindowMs?: () => number;
+  /** Delay between refreshes while nobody is looking, read again at every tick. */
+  idleRefreshEveryMs?: () => number;
 }
 
 const REFRESH_EVERY_MS = 90_000;
 const ACTIVE_WINDOW_MS = 10 * 60_000;
+const IDLE_REFRESH_EVERY_MS = 30 * 60_000;
+
+// GitHub gives 5000 GraphQL points an hour. Refreshing one repository is taken to cost 2 (not measured), and
+// refreshing while nobody looks may use a quarter of the hour, which leaves the rest to people and to reviews.
+const GITHUB_POINTS_PER_HOUR = 5000;
+const POINTS_PER_REPO_REFRESH = 2;
+const IDLE_BUDGET_SHARE = 0.25;
+const minIdleRefreshEveryMs = (repoCount: number) =>
+  Math.ceil((repoCount * POINTS_PER_REPO_REFRESH * 3_600_000) / (GITHUB_POINTS_PER_HOUR * IDLE_BUDGET_SHARE));
 
 /** A setting that cannot be read, or is not a positive number, falls back to its default instead of breaking the schedule. */
 function read(setting: () => number, fallback: number): number {
@@ -34,6 +45,7 @@ export function createPrRefresher({
   now = Date.now,
   refreshEveryMs = () => REFRESH_EVERY_MS,
   activeWindowMs = () => ACTIVE_WINDOW_MS,
+  idleRefreshEveryMs = () => IDLE_REFRESH_EVERY_MS,
 }: PrRefresherDeps) {
   const errors = new Map<string, string>();
 
@@ -81,6 +93,7 @@ export function createPrRefresher({
 
   /** Refreshes the given repositories, the selected ones by default; a failure is kept for freshness(), never thrown. */
   async function warm(repos?: string[]): Promise<void> {
+    if (!repos) lastWarm = now(); // only a refresh of every selected repository tells when the next slow one is due
     try {
       await Promise.allSettled((repos ?? selected()).map(refreshRepo));
     } catch (err) {
@@ -113,6 +126,8 @@ export function createPrRefresher({
       fetchedAt: repos.length === 0 || fetchedAt.includes(null) ? null : (fetchedAt as string[]).reduce((a, b) => (a < b ? a : b)),
       error: repos.map((repo) => errors.get(repo)).find((e) => e !== undefined) ?? null,
       version: `${fetchedAt.map((f) => f ?? "").join("|")}#${reviewsFingerprint(repos)}`,
+      refreshing: repos.some((repo) => inFlight.has(repo)),
+      activeEveryMs: read(refreshEveryMs, REFRESH_EVERY_MS),
     };
   }
 
@@ -127,9 +142,23 @@ export function createPrRefresher({
     if (wasQuiet) void warm();
   }
 
+  // Nobody looking does not mean never refreshing: a slow refresh keeps the data from being hours old when someone comes back.
+  let lastWarm: number | null = null;
+
+  function idleRefreshDue(): boolean {
+    if (lastWarm === null) return false;
+    let repoCount = 0;
+    try {
+      repoCount = selected().length;
+    } catch {
+      // an unreadable selection leaves only the delay itself
+    }
+    return now() - lastWarm >= Math.max(read(idleRefreshEveryMs, IDLE_REFRESH_EVERY_MS), minIdleRefreshEveryMs(repoCount));
+  }
+
   async function tick(): Promise<void> {
-    if (lastSeen === null || now() - lastSeen >= read(activeWindowMs, ACTIVE_WINDOW_MS)) return;
-    await warm();
+    const watched = lastSeen !== null && now() - lastSeen < read(activeWindowMs, ACTIVE_WINDOW_MS);
+    if (watched || idleRefreshDue()) await warm();
   }
 
   /** Refreshes now, then again after each delay, until the returned function is called. */

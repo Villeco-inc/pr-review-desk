@@ -107,6 +107,10 @@ export interface Freshness {
   error: string | null;
   /** Changes whenever any of the repositories is fetched again, so a reader holding an older one reloads the list. */
   version: string;
+  /** True while GitHub is being asked for one of the repositories. */
+  refreshing: boolean;
+  /** How often the server refreshes while someone is looking: data older than this has been missed. */
+  activeEveryMs: number;
 }
 
 /** The `repo` value that stands for every selected repository at once. */

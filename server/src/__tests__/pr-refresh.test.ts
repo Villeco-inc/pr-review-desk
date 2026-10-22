@@ -412,6 +412,179 @@ describe("pull request cache", () => {
     expect(refresher.freshness([web]).fetchedAt).toBe("2026-10-15T12:00:00.000Z");
   });
 
+  describe("when nobody is looking", () => {
+    const repo = "Villeco-inc/linea-web";
+    const minutes = (n: number) => n * 60_000;
+
+    it("still refreshes, but only every thirty minutes by default", async () => {
+      const gh = fakeGithub();
+      let clock = Date.parse("2026-10-15T12:00:00Z");
+      const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => [repo], now: () => clock });
+
+      await refresher.warm();
+      clock += minutes(29);
+      await refresher.tick();
+      expect(gh.calls).toEqual([repo]);
+
+      clock += minutes(2);
+      await refresher.tick();
+      expect(gh.calls).toEqual([repo, repo]);
+    });
+
+    it("waits as long as the delay it is given, read again at every tick", async () => {
+      const gh = fakeGithub();
+      let clock = Date.parse("2026-10-15T12:00:00Z");
+      let delay = minutes(2);
+      const refresher = createPrRefresher({
+        db: openDb(),
+        fetchPrs: gh.fetchPrs,
+        selected: () => [repo],
+        now: () => clock,
+        idleRefreshEveryMs: () => delay,
+      });
+
+      await refresher.warm();
+      clock += minutes(2) - 1;
+      await refresher.tick();
+      expect(gh.calls).toEqual([repo]);
+
+      clock += 1;
+      await refresher.tick();
+      expect(gh.calls).toEqual([repo, repo]);
+
+      delay = minutes(5);
+      clock += minutes(4);
+      await refresher.tick();
+      expect(gh.calls).toEqual([repo, repo]);
+    });
+
+    it("never goes below what GitHub's rate limit allows for the number of repositories selected", async () => {
+      const repos = Array.from({ length: 10 }, (_, i) => `Villeco-inc/repo-${i}`);
+      const gh = fakeGithub();
+      let clock = Date.parse("2026-10-15T12:00:00Z");
+      const refresher = createPrRefresher({
+        db: openDb(),
+        fetchPrs: gh.fetchPrs,
+        selected: () => repos,
+        now: () => clock,
+        idleRefreshEveryMs: () => 1000,
+      });
+
+      await refresher.warm();
+      clock += 57_000;
+      await refresher.tick();
+      expect(gh.calls).toHaveLength(10);
+
+      clock += 1_000;
+      await refresher.tick();
+      expect(gh.calls).toHaveLength(20);
+    });
+
+    it("does not count the refresh of one repository as a refresh of all of them", async () => {
+      const gh = fakeGithub();
+      let clock = Date.parse("2026-10-15T12:00:00Z");
+      const refresher = createPrRefresher({ db: openDb(), fetchPrs: gh.fetchPrs, selected: () => [repo], now: () => clock });
+
+      await refresher.warm();
+      clock += minutes(29);
+      await refresher.warm(["Villeco-inc/linea-mobile"]);
+      clock += minutes(2);
+      await refresher.tick();
+
+      expect(gh.calls).toEqual([repo, "Villeco-inc/linea-mobile", repo]);
+    });
+
+    it("falls back to thirty minutes when the delay it is given cannot be used", async () => {
+      const gh = fakeGithub();
+      let clock = Date.parse("2026-10-15T12:00:00Z");
+      const refresher = createPrRefresher({
+        db: openDb(),
+        fetchPrs: gh.fetchPrs,
+        selected: () => [repo],
+        now: () => clock,
+        idleRefreshEveryMs: () => {
+          throw new Error("bad setting");
+        },
+      });
+
+      await refresher.warm();
+      clock += minutes(29);
+      await refresher.tick();
+      expect(gh.calls).toEqual([repo]);
+
+      clock += minutes(2);
+      await refresher.tick();
+      expect(gh.calls).toEqual([repo, repo]);
+    });
+  });
+
+  describe("what freshness tells about a refresh under way", () => {
+    const repo = "Villeco-inc/linea-web";
+
+    it("says a repository is being refreshed while GitHub is being asked, and not before or after", async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const refresher = createPrRefresher({
+        db: openDb(),
+        fetchPrs: async (r) => {
+          await gate;
+          return [pr(r, "v1")];
+        },
+        selected: () => [],
+      });
+
+      expect(refresher.freshness([repo]).refreshing).toBe(false);
+      const warming = refresher.warm([repo]);
+      expect(refresher.freshness([repo]).refreshing).toBe(true);
+      expect(refresher.freshness(["Villeco-inc/linea-mobile"]).refreshing).toBe(false);
+
+      release();
+      await warming;
+      expect(refresher.freshness([repo]).refreshing).toBe(false);
+    });
+
+    it("does not change the version of the data when a refresh starts", async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const refresher = createPrRefresher({
+        db: openDb(),
+        fetchPrs: async (r) => {
+          await gate;
+          return [pr(r, "v1")];
+        },
+        selected: () => [],
+      });
+
+      const before = refresher.freshness([repo]).version;
+      const warming = refresher.warm([repo]);
+      expect(refresher.freshness([repo]).version).toBe(before);
+      release();
+      await warming;
+    });
+
+    it("gives the delay between refreshes while a client is looking, so a page can tell how old is too old", () => {
+      const defaults = createPrRefresher({ db: openDb(), fetchPrs: fakeGithub().fetchPrs, selected: () => [] });
+      expect(defaults.freshness([repo]).activeEveryMs).toBe(90_000);
+
+      const set = createPrRefresher({ db: openDb(), fetchPrs: fakeGithub().fetchPrs, selected: () => [], refreshEveryMs: () => 45_000 });
+      expect(set.freshness([repo]).activeEveryMs).toBe(45_000);
+
+      const broken = createPrRefresher({
+        db: openDb(),
+        fetchPrs: fakeGithub().fetchPrs,
+        selected: () => [],
+        refreshEveryMs: () => {
+          throw new Error("bad setting");
+        },
+      });
+      expect(broken.freshness([repo]).activeEveryMs).toBe(90_000);
+    });
+  });
+
   it("keeps the cached list when a refresh fails and reports the error", async () => {
     const repo = "Villeco-inc/linea-web";
     let clock = Date.parse("2026-10-15T12:00:00Z");

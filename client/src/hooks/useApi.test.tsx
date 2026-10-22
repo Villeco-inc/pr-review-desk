@@ -78,6 +78,30 @@ describe("useQuery", () => {
     expect(result.current.loading).toBe(false);
   });
 
+  it("polls at the pace its last answer asks for, so a busy server is asked again sooner", async () => {
+    const routes: Record<string, Route> = { "/api/busy": () => ok({ busy: true }) };
+    const calls = stubNetwork(routes);
+    const pace = (data: { busy: boolean } | null) => (data?.busy ? 2_000 : 10_000);
+    renderHook(() => useQuery<{ busy: boolean }>("/api/busy", [], 0, pace));
+    await flush();
+    expect(calls).toHaveLength(1);
+
+    routes["/api/busy"] = () => ok({ busy: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(calls).toHaveLength(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9_999);
+    });
+    expect(calls).toHaveLength(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(calls).toHaveLength(3);
+  });
+
   it("asks again at once when the tab becomes visible, not while it is hidden", async () => {
     const routes: Record<string, Route> = { "/api/a": () => ok(["old"]) };
     const calls = stubNetwork(routes);
