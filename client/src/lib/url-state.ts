@@ -1,7 +1,8 @@
 // What the URL carries: which screen (the path) and its list filters (the query).
 // Everything else a screen remembers lives in storage — see lib/storage.ts.
 
-import { readStored, removeStored, writeStored } from "./storage";
+import { readStored, writeStored } from "./storage";
+import { compareMemory, localMemory, prsMemory } from "./view-memory";
 
 export type Search = Record<string, string | string[]>;
 
@@ -69,26 +70,24 @@ export function validatePrListSearch(raw: Record<string, unknown>): PrListSearch
 
 export const isEmptySearch = (s: object) => Object.values(s).every((v) => v === undefined || (Array.isArray(v) && v.length === 0));
 
-const PR_LAST_REPO = "prd:prs:repo";
-const prFiltersKey = (repo: string) => `prd:prs:filters:${repo}`;
+// What the screens remember lives on the server (see view-memory.ts); only the values read back are
+// checked here, since they come from outside.
 
 export function loadPrFilters(repo: string): PrFilters {
-  const stored = readStored<Record<string, unknown>>("local", prFiltersKey(repo));
-  const { repo: _ignored, ...filters } = validatePrListSearch(stored ?? {});
+  const { repo: _ignored, ...filters } = validatePrListSearch(prsMemory.filters(repo) ?? {});
   return filters;
 }
 
 export function savePrList(search: PrListSearch) {
   if (!search.repo) return;
   const { repo, ...filters } = search;
-  writeStored("local", PR_LAST_REPO, repo);
-  writeStored("local", prFiltersKey(repo), filters);
+  prsMemory.remember(repo, filters);
 }
 
 /** What `/prs` with an empty query should restore to, or null when nothing was remembered. */
 export function rememberedPrList(): PrListSearch | null {
-  const repo = readStored<string>("local", PR_LAST_REPO);
-  if (typeof repo !== "string" || !repo) return null;
+  const repo = prsMemory.repo();
+  if (!repo) return null;
   return { repo, ...loadPrFilters(repo) };
 }
 
@@ -101,27 +100,21 @@ export interface LocalSearch {
 
 export const validateLocalSearch = (raw: Record<string, unknown>): LocalSearch => ({ branch: str(raw.branch), base: str(raw.base) });
 
-const LOCAL_LAST_REPO = "prd:local:repo";
-const localKey = (label: string) => `prd:local:selection:${label}`;
-
 export function loadLocalSelection(label: string): LocalSearch {
-  return validateLocalSearch(readStored<Record<string, unknown>>("local", localKey(label)) ?? {});
+  return validateLocalSearch(localMemory.selection(label) ?? {});
 }
 
 export function saveLocalSelection(label: string, search: LocalSearch) {
-  writeStored("local", LOCAL_LAST_REPO, label);
-  writeStored("local", localKey(label), search);
+  localMemory.remember(label, search);
 }
 
 export function rememberedLocalRepo(): string | null {
-  const label = readStored<string>("local", LOCAL_LAST_REPO);
-  return typeof label === "string" && label ? label : null;
+  return localMemory.label() ?? null;
 }
 
 /** A remembered repo that no longer exists must not keep redirecting `/local` to itself. */
 export function forgetLocalRepo(label: string) {
-  if (rememberedLocalRepo() === label) removeStored("local", LOCAL_LAST_REPO);
-  removeStored("local", localKey(label));
+  localMemory.forget(label);
 }
 
 // ── Compare ───────────────────────────────────────────────────────────────────
@@ -135,22 +128,17 @@ export interface CompareSearch {
 
 export const validateCompareSearch = (raw: Record<string, unknown>): CompareSearch => ({ base: str(raw.base), head: str(raw.head) });
 
-const COMPARE_LAST_REPO = "prd:compare:repo";
-const compareHeadKey = (repo: string) => `prd:compare:head:${repo}`;
-
 export function saveCompare(repo: string, head: string | undefined) {
-  writeStored("local", COMPARE_LAST_REPO, repo);
-  if (head) writeStored("local", compareHeadKey(repo), head);
+  compareMemory.remember(repo, head);
 }
 
 export function rememberedCompareRepo(): string | null {
-  const repo = readStored<string>("local", COMPARE_LAST_REPO);
-  return typeof repo === "string" && repo.includes("/") ? repo : null;
+  const repo = compareMemory.repo();
+  return repo?.includes("/") ? repo : null;
 }
 
 export function loadCompareHead(repo: string): string | undefined {
-  const head = readStored<string>("local", compareHeadKey(repo));
-  return typeof head === "string" && head ? head : undefined;
+  return compareMemory.head(repo) || undefined;
 }
 
 export const compareRepoSegment = (repo: string) => repo.replace(/^compare\//, "");

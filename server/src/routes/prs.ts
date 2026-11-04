@@ -1,8 +1,9 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { getDb } from "../db/schema";
-import { listPullRequests, listOrgPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } from "../services/github";
-import { saveSelectedRepos, selectedRepos } from "../services/repo-selection";
-import { reviewId } from "../services/review-engine";
+import { fetchPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } from "../services/github";
+import { createPrRefresher } from "../services/pr-refresh";
+import { isRepoName, saveSelectedRepos, scopeOf, selectedRepos } from "../services/repo-selection";
+import { findReview } from "../services/review-lookup";
 import { discoveredRepos } from "../services/repo-discovery";
 import { checkoutsRoot } from "../services/local-git";
 import type { FindingRow, MyReviewState, PullRequest, PullRequestDto, ReviewRow } from "../../../shared/types";
@@ -21,9 +22,31 @@ export function configuredRepos(): string[] {
   return selectedRepos(getDb(), startingPick.join(","));
 }
 
+const refresher = createPrRefresher({
+  db: getDb(),
+  fetchPrs: fetchPullRequests,
+  selected: configuredRepos,
+});
+
+/** Warms the cache now, then keeps it fresh while a client is looking. */
+export function startPrRefresh(): void {
+  refresher.start();
+}
+
+/** The repositories the request's `repo` stands for, or null once a 400 has been sent: only selected ones are served. */
+function scopeFor(req: Request, res: Response): string[] | null {
+  const repo = String(req.query.repo ?? "");
+  if (!repo) {
+    res.status(400).json({ error: "repo query param is required" });
+    return null;
+  }
+  const scope = scopeOf(repo, configuredRepos());
+  if (!scope) res.status(400).json({ error: `${repo} is not a selected repository` });
+  return scope;
+}
+
 function reviewStatusFor(repo: string, number: number): ReviewRow | undefined {
-  const db = getDb();
-  return db.prepare("SELECT * FROM reviews WHERE id = ?").get(reviewId(repo, number)) as ReviewRow | undefined;
+  return findReview(getDb(), repo, number);
 }
 
 function findingCounts(id: string): { open: number; posted: number } {
@@ -52,7 +75,8 @@ prsRouter.put("/repos", (req, res) => {
     return;
   }
   try {
-    saveSelectedRepos(getDb(), repos);
+    const added = saveSelectedRepos(getDb(), repos);
+    void refresher.warm(added);
     res.json(configuredRepos());
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
@@ -77,16 +101,13 @@ prsRouter.get("/viewer", async (_req, res) => {
 });
 
 prsRouter.get("/prs", async (req, res) => {
-  const repo = String(req.query.repo ?? "");
-  if (!repo) {
-    res.status(400).json({ error: "repo query param is required" });
-    return;
-  }
+  const scope = scopeFor(req, res);
+  if (!scope) return;
 
-  const force = req.query.refresh === "true";
+  refresher.touch();
 
   try {
-    const prs = repo.startsWith("org:") ? await listOrgPullRequests(repo.slice(4), force) : await listPullRequests(repo, force);
+    const prs = await refresher.list(scope);
     // The list still loads if the viewer lookup fails; the column just stays empty.
     const viewer = await getViewer().catch(() => null);
     const dtos: PullRequestDto[] = prs.map((pr) => {
@@ -106,9 +127,33 @@ prsRouter.get("/prs", async (req, res) => {
   }
 });
 
+/** Asks GitHub now instead of waiting for the next refresh; the list is read again with GET /prs. */
+prsRouter.post("/refresh", async (req, res) => {
+  const scope = scopeFor(req, res);
+  if (!scope) return;
+  refresher.touch();
+  try {
+    await refresher.list(scope, true);
+    res.json(refresher.freshness(scope));
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+prsRouter.get("/freshness", (req, res) => {
+  const scope = scopeFor(req, res);
+  if (!scope) return;
+  refresher.touch();
+  res.json(refresher.freshness(scope));
+});
+
 prsRouter.get("/prs/:owner/:name/:number", async (req, res) => {
   const repo = `${req.params.owner}/${req.params.name}`;
   const num = Number(req.params.number);
+  if (!isRepoName(repo)) {
+    res.status(400).json({ error: "repo must be owner/name" });
+    return;
+  }
   if (!Number.isFinite(num)) {
     res.status(400).json({ error: "invalid PR number" });
     return;

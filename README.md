@@ -75,7 +75,8 @@ The review compares **commits**: `base...branch` in that checkout. Work that is 
 
 ## Using it
 
-- **Pull requests**: pick a repository (or all repositories of the org), filter by author, status or label, open a PR, choose a model and an effort level, then **Start review**. Findings arrive sorted by severity.
+- **Pull requests**: pick a repository (or **All selected repos**), filter by author, status or label, open a PR, choose a model and an effort level, then **Start review**. Findings arrive sorted by severity.
+- **Always fresh**: while the app is open, the server asks GitHub for your repositories' pull requests every 90 seconds, and once at startup. The line under the title says how long ago that was, and says so when the last refresh failed. **Refresh** asks GitHub right away. After 10 minutes without a visit it slows down to one refresh every 30 minutes, and a page opened or come back to after a while refreshes at once.
 - **Findings**: each one shows the background, the problem and a suggested fix, next to the diff. Edit the suggested comment, then post it inline or as a PR comment, or dismiss it.
 - **Local branches**: pick a checkout, a branch and a base, then review. You get a **Copy fix prompt** to hand the findings to your coding agent.
 - **Deadpool**: when the folder `DEADPOOL_REVIEWS_DIR` exists, every verdict file Deadpool writes there (`<ticket>/<date>-<dev>-tour<n>-<verdict>.md`) is read every 30 seconds. Its findings join the local review of the reviewed branch, in the repo whose history holds the reviewed commit, marked **Deadpool**, and you treat them like any other finding. A later round marks the open findings of the earlier ones resolved, since Deadpool lists again every finding that still holds. The files are only read; a verdict whose commit is in none of your local repos is left out, and the server log says so.

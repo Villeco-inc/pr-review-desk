@@ -23,13 +23,15 @@ export default function RepoPicker({ selected, required, onClose }: { selected: 
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
-  // Picked repositories come first, so unticking one never means scrolling to find it.
+  // Picked repositories come first, so unticking one never means scrolling to find it. They are the ones
+  // picked when the picker opened: a selection changed elsewhere meanwhile must not move rows under the cursor.
+  const [openedWith] = useState(selected);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const all = [...new Set([...selected, ...(available ?? [])])];
+    const all = [...new Set([...openedWith, ...(available ?? [])])];
     const matches = q ? all.filter((r) => r.toLowerCase().includes(q)) : all;
-    return [...matches.filter((r) => selected.includes(r)), ...matches.filter((r) => !selected.includes(r))];
-  }, [available, selected, query]);
+    return [...matches.filter((r) => openedWith.includes(r)), ...matches.filter((r) => !openedWith.includes(r))];
+  }, [available, openedWith, query]);
 
   const toggle = (repo: string) =>
     setPicked((prev) => {

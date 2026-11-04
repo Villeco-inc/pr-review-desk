@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ALL_REPOS } from "../../../shared/types";
 import type { FindingDto, LocalReviewDto, PullRequestDto } from "../../../shared/types";
 import { fetchJson } from "../lib/api";
 import { rank } from "../lib/search";
@@ -50,93 +51,23 @@ export const JUMP_KEY_LABEL = isMac ? "⌘K" : "Ctrl K";
 // Kept across openings so the palette shows the last index immediately while it refreshes.
 let cachedIndex: Item[] = [];
 
-async function loadIndex(onUpdate: (items: Item[]) => void): Promise<void> {
-  const settle = <T,>(p: Promise<T>) => p.then((v) => v, () => null);
+const settle = <T,>(p: Promise<T>) => p.then((v) => v, () => null);
 
-  const [repos, localRepos, localReviews] = await Promise.all([
-    settle(fetchJson<string[]>("/api/repos")),
-    settle(fetchJson<LocalRepo[]>("/api/local/repos")),
-    settle(fetchJson<LocalReviewDto[]>("/api/local/reviews")),
-  ]);
+interface FindingSource {
+  repo: string;
+  number: number;
+  label: string;
+  local: null | { repoLabel: string; branch: string; base: string };
+}
 
-  const org = repos?.[0]?.split("/")[0];
-  const [prs, branchLists] = await Promise.all([
-    org ? settle(fetchJson<PullRequestDto[]>(`/api/prs?repo=${encodeURIComponent(`org:${org}`)}`)) : Promise.resolve(null),
-    Promise.all(
-      (localRepos ?? []).map((r) =>
-        settle(fetchJson<{ branches: { name: string }[] }>(`/api/local/branches?repo=${encodeURIComponent(r.label)}`)).then((d) => ({
-          label: r.label,
-          branches: d?.branches ?? [],
-        }))
-      )
-    ),
-  ]);
-
-  const labelFor = (repoId: string) => (localRepos ?? []).find((r) => repoId.startsWith(`local/${r.label}-`))?.label ?? "";
-
-  const items: Item[] = [...ACTIONS];
-  for (const pr of prs ?? []) {
-    items.push({
-      id: `pr:${pr.repo}#${pr.number}`,
-      group: "Pull requests",
-      icon: "pullRequest",
-      title: pr.title,
-      meta: `${pr.repo.split("/").pop()} #${pr.number} · ${pr.author}`,
-      badge: pr.reviewStatus !== "none" ? { status: pr.reviewStatus } : undefined,
-      target: { kind: "pr", repo: pr.repo, number: pr.number },
-    });
-  }
-
-  // A branch that already has a review opens that review; the others open the form preselected.
-  const reviewed = new Set<string>();
-  for (const r of localReviews ?? []) {
-    const repoLabel = labelFor(r.repo);
-    const branch = r.branch || r.title;
-    reviewed.add(`${repoLabel}:${branch}`);
-    items.push({
-      id: `lr:${r.id}`,
-      group: "Local branches",
-      icon: "branch",
-      title: branch,
-      meta: `${repoLabel}${r.base ? ` · → ${r.base}` : ""} · review`,
-      badge: { status: r.status },
-      target: { kind: "local-review", repo: r.repo, number: r.number, repoLabel, branch, base: r.base || "main" },
-    });
-  }
-  for (const { label, branches } of branchLists) {
-    for (const b of branches) {
-      if (reviewed.has(`${label}:${b.name}`)) continue;
-      items.push({
-        id: `lb:${label}:${b.name}`,
-        group: "Local branches",
-        icon: "branch",
-        title: b.name,
-        meta: `${label} · no review yet`,
-        target: { kind: "local-branch", repoLabel: label, branch: b.name },
-      });
-    }
-  }
-  onUpdate(items);
-
-  // Findings need one request per review, so they come in a second pass.
-  const sources = [
-    ...(prs ?? [])
-      .filter((pr) => pr.reviewStatus === "reported")
-      .map((pr) => ({ repo: pr.repo, number: pr.number, label: `${pr.repo.split("/").pop()} #${pr.number}`, local: null as null | { repoLabel: string; branch: string; base: string } })),
-    ...(localReviews ?? [])
-      .filter((r) => r.totalFindings > 0)
-      .map((r) => {
-        const repoLabel = labelFor(r.repo);
-        const branch = r.branch || r.title;
-        return { repo: r.repo, number: r.number, label: `${repoLabel} · ${branch}`, local: { repoLabel, branch, base: r.base || "main" } };
-      }),
-  ];
+// Findings need one request per review.
+async function findingItems(sources: FindingSource[]): Promise<Item[]> {
   const results = await Promise.all(
     sources.map((s) => settle(fetchJson<{ findings: FindingDto[] }>(`/api/reviews/${s.repo}/${s.number}`)).then((d) => ({ s, findings: d?.findings ?? [] })))
   );
-  for (const { s, findings } of results) {
-    for (const f of findings) {
-      items.push({
+  return results.flatMap(({ s, findings }) =>
+    findings.map(
+      (f): Item => ({
         id: `f:${f.id}`,
         group: "Findings",
         icon: "alert",
@@ -146,10 +77,101 @@ async function loadIndex(onUpdate: (items: Item[]) => void): Promise<void> {
         target: s.local
           ? { kind: "local-finding", repo: s.repo, number: s.number, ...s.local, findingId: f.id }
           : { kind: "finding", repo: s.repo, number: s.number, findingId: f.id },
+      })
+    )
+  );
+}
+
+// Pull requests and local branches load on their own, so a slow side never holds the other back.
+async function loadIndex(onUpdate: (items: Item[]) => void): Promise<void> {
+  const lanes = { prs: [] as Item[], prFindings: [] as Item[], local: [] as Item[], localFindings: [] as Item[] };
+  const publish = () => onUpdate([...ACTIONS, ...lanes.prs, ...lanes.local, ...lanes.prFindings, ...lanes.localFindings]);
+
+  const loadPrs = async () => {
+    const prs = (await settle(fetchJson<PullRequestDto[]>(`/api/prs?repo=${ALL_REPOS}`))) ?? [];
+    lanes.prs = prs.map(
+      (pr): Item => ({
+        id: `pr:${pr.repo}#${pr.number}`,
+        group: "Pull requests",
+        icon: "pullRequest",
+        title: pr.title,
+        meta: `${pr.repo.split("/").pop()} #${pr.number} · ${pr.author}`,
+        badge: pr.reviewStatus !== "none" ? { status: pr.reviewStatus } : undefined,
+        target: { kind: "pr", repo: pr.repo, number: pr.number },
+      })
+    );
+    publish();
+
+    lanes.prFindings = await findingItems(
+      prs
+        .filter((pr) => pr.reviewStatus === "reported")
+        .map((pr) => ({ repo: pr.repo, number: pr.number, label: `${pr.repo.split("/").pop()} #${pr.number}`, local: null }))
+    );
+    publish();
+  };
+
+  const loadLocal = async () => {
+    const [localRepos, localReviews] = await Promise.all([
+      settle(fetchJson<LocalRepo[]>("/api/local/repos")),
+      settle(fetchJson<LocalReviewDto[]>("/api/local/reviews")),
+    ]);
+    const branchLists = await Promise.all(
+      (localRepos ?? []).map((r) =>
+        settle(fetchJson<{ branches: { name: string }[] }>(`/api/local/branches?repo=${encodeURIComponent(r.label)}`)).then((d) => ({
+          label: r.label,
+          branches: d?.branches ?? [],
+        }))
+      )
+    );
+
+    const labelFor = (repoId: string) => (localRepos ?? []).find((r) => repoId.startsWith(`local/${r.label}-`))?.label ?? "";
+
+    // A branch that already has a review opens that review; the others open the form preselected.
+    const items: Item[] = [];
+    const reviewed = new Set<string>();
+    for (const r of localReviews ?? []) {
+      const repoLabel = labelFor(r.repo);
+      const branch = r.branch || r.title;
+      reviewed.add(`${repoLabel}:${branch}`);
+      items.push({
+        id: `lr:${r.id}`,
+        group: "Local branches",
+        icon: "branch",
+        title: branch,
+        meta: `${repoLabel}${r.base ? ` · → ${r.base}` : ""} · review`,
+        badge: { status: r.status },
+        target: { kind: "local-review", repo: r.repo, number: r.number, repoLabel, branch, base: r.base || "main" },
       });
     }
-  }
-  onUpdate([...items]);
+    for (const { label, branches } of branchLists) {
+      for (const b of branches) {
+        if (reviewed.has(`${label}:${b.name}`)) continue;
+        items.push({
+          id: `lb:${label}:${b.name}`,
+          group: "Local branches",
+          icon: "branch",
+          title: b.name,
+          meta: `${label} · no review yet`,
+          target: { kind: "local-branch", repoLabel: label, branch: b.name },
+        });
+      }
+    }
+    lanes.local = items;
+    publish();
+
+    lanes.localFindings = await findingItems(
+      (localReviews ?? [])
+        .filter((r) => r.totalFindings > 0)
+        .map((r) => {
+          const repoLabel = labelFor(r.repo);
+          const branch = r.branch || r.title;
+          return { repo: r.repo, number: r.number, label: `${repoLabel} · ${branch}`, local: { repoLabel, branch, base: r.base || "main" } };
+        })
+    );
+    publish();
+  };
+
+  await Promise.all([loadPrs(), loadLocal()]);
 }
 
 export default function CommandPalette({ open, onClose, onJump }: { open: boolean; onClose: () => void; onJump: (target: JumpTarget) => void }) {
