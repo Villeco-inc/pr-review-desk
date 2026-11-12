@@ -30,6 +30,7 @@ export function useGo() {
   const navigate = useNavigate();
   return useMemo(
     () => ({
+      home: () => navigate({ to: "/" }),
       // Lists open without a query: their route restores what was remembered.
       prList: () => navigate({ to: "/prs" }),
       pr: (repo: string, number: number) =>

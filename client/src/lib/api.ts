@@ -5,7 +5,8 @@ async function parseResponse<T>(res: Response): Promise<T> {
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const message = (data && (data.error || data.message)) || res.statusText;
-    throw new Error(message);
+    // `code` names the refusal when the server gives one, for callers that act on it rather than show it.
+    throw Object.assign(new Error(message), { code: data?.code as string | undefined });
   }
   return data as T;
 }

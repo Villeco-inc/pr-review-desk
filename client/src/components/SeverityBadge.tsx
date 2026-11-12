@@ -11,10 +11,13 @@ const STYLES: Record<string, string> = {
 export default function SeverityBadge({
   severity,
   count,
+  labelled = false,
   className = "",
 }: {
   severity: string;
   count?: number;
+  /** With a count, spell the severity after it ("2 Medium") instead of leaving the colour to say it. */
+  labelled?: boolean;
   className?: string;
 }) {
   const s = STYLES[severity] ?? STYLES.nit;
@@ -24,7 +27,7 @@ export default function SeverityBadge({
         count !== undefined ? "font-mono" : ""
       } ${s} ${className}`}
     >
-      {count !== undefined ? count : LABELS[severity] ?? severity}
+      {count === undefined ? LABELS[severity] ?? severity : labelled ? `${count} ${LABELS[severity] ?? severity}` : count}
     </span>
   );
 }

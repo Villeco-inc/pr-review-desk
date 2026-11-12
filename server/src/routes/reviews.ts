@@ -5,9 +5,11 @@ import { splitUnifiedDiff, findPatchForFile } from "../services/diff-utils";
 import { approvalWarnings, failingChecks } from "../services/approval";
 import { toFindingDto, toReviewDto } from "../services/dto";
 import { getRunSession, listRuns } from "../services/run-log";
-import { isRepoName } from "../services/repo-selection";
+import { followRepo, isRepoName, selectedRepoNamed } from "../services/repo-selection";
 import { findReview } from "../services/review-lookup";
-import type { FindingRow, ReviewEvent, ReviewOutcome, ReviewRow } from "../../../shared/types";
+import { markApproved, pasteVerdict, recentPrReviews } from "../services/recent-reviews";
+import { configuredRepos } from "./prs";
+import type { FindingRow, PasteReviewDto, RecentReviewsDto, ReviewEvent, ReviewOutcome, ReviewRow } from "../../../shared/types";
 
 export const reviewsRouter = Router();
 
@@ -70,6 +72,56 @@ reviewsRouter.post("/reviews", async (req, res) => {
     rlog(`POST /reviews FAILED: ${(err as Error).message}`);
     res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }
+});
+
+/**
+ * A PR pasted on the home screen. Unlike POST /reviews, it refuses a repository that is not followed
+ * (unless asked to follow it first) and starts no run that would read nothing new.
+ */
+reviewsRouter.post("/reviews/paste", async (req, res) => {
+  const { repo, number, model, effort, follow } = req.body as { repo?: string; number?: number; model?: string; effort?: string; follow?: boolean };
+  rlog(`POST /reviews/paste body=${JSON.stringify({ repo, number, model, effort, follow })}`);
+
+  if (!isRepoName(repo) || !Number.isInteger(number) || Number(number) <= 0) {
+    res.status(400).json({ error: "repo (owner/name) and number are required" });
+    return;
+  }
+
+  const followed = configuredRepos();
+  const listed = selectedRepoNamed(repo, followed);
+  if (!listed && follow !== true) {
+    res.status(409).json({ error: `${repo} is not a followed repository`, code: "not-followed" });
+    return;
+  }
+
+  try {
+    const { getHeadSha } = await import("../services/github");
+    // A PR already reviewed keeps the spelling its review was stored under, so a different case starts no second review.
+    const name = findReview(getDb(), repo, Number(number))?.repo ?? listed ?? repo;
+    // Read from GitHub before following: a repository that is mistyped or out of reach is never followed.
+    const headSha = await getHeadSha(name, Number(number));
+    if (!listed) followRepo(getDb(), followed, repo);
+
+    const id = reviewId(name, Number(number));
+    const verdict = pasteVerdict(getDb(), id, headSha);
+    if (verdict !== "start") {
+      res.json({ id, started: false, reason: verdict } satisfies PasteReviewDto);
+      return;
+    }
+    await startReview(name, Number(number), [], model || undefined, effort || undefined);
+    res.status(202).json({ id, started: true } satisfies PasteReviewDto);
+  } catch (err) {
+    rlog(`POST /reviews/paste FAILED: ${(err as Error).message}`);
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+reviewsRouter.get("/reviews/recent", (req, res) => {
+  // No upper bound: the home screen grows its limit by a page each time more is asked for.
+  const limit = Math.max(Number(req.query.limit) || 20, 1);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const pin = typeof req.query.pin === "string" && req.query.pin ? req.query.pin : undefined;
+  res.json({ ...recentPrReviews(getDb(), limit, offset, pin), jevEnabled: Boolean(process.env.TYPESAFE_API_KEY?.trim()) } satisfies RecentReviewsDto);
 });
 
 reviewsRouter.get("/reviews/latest", (req, res) => {
@@ -190,6 +242,7 @@ reviewsRouter.post("/reviews/:owner/:name/:number/submit", async (req, res) => {
   try {
     const commitId = await getHeadSha(repo, num);
     const result = await submitReview(repo, num, event, body ?? "", commitId);
+    if (event === "APPROVE") markApproved(getDb(), idOf(repo, num));
     rlog(`submitted ${event} on ${repo}#${num}: ${result.url}`);
     res.json(result);
   } catch (err) {
@@ -266,7 +319,10 @@ reviewsRouter.post("/reviews/:owner/:name/:number/post-all", async (req, res) =>
     return;
   }
 
-  const openFindings = loadFindings(id).filter((f) => f.state === "open");
+  // Without `ids`, every open finding; with it, only those of them still open.
+  const { ids } = (req.body ?? {}) as { ids?: unknown };
+  const wanted = Array.isArray(ids) ? new Set(ids.map(String)) : null;
+  const openFindings = loadFindings(id).filter((f) => f.state === "open" && (!wanted || wanted.has(f.id)));
   if (openFindings.length === 0) {
     res.json({ posted: 0 });
     return;

@@ -71,3 +71,8 @@ export function saveSelectedRepos(db: Database.Database, repos: string[]): strin
   );
   return picked.filter((r) => !before.has(r.toLowerCase()));
 }
+
+/** Adds one repository to the selection in effect, which may still be the stand-in from REPOS: none of it is dropped. */
+export function followRepo(db: Database.Database, selected: string[], repo: string): void {
+  saveSelectedRepos(db, [...selected, repo]);
+}

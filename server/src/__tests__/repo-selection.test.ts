@@ -4,7 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { migrate } from "../db/schema";
-import { isRepoName, parseRepoList, saveSelectedRepos, scopeOf, selectedRepoNamed, selectedRepos } from "../services/repo-selection";
+import { followRepo, isRepoName, parseRepoList, saveSelectedRepos, scopeOf, selectedRepoNamed, selectedRepos } from "../services/repo-selection";
 
 const dirs: string[] = [];
 
@@ -141,6 +141,27 @@ describe("selected repositories", () => {
     saveSelectedRepos(first, ["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"]);
     first.close();
     expect(selectedRepos(openDb(file), undefined)).toEqual(["Villeco-inc/linea-web", "Villeco-inc/linea-mobile"]);
+  });
+});
+
+describe("following one more repository", () => {
+  it("keeps the repositories that came from REPOS when nothing was picked yet", () => {
+    const db = openDb();
+    followRepo(db, selectedRepos(db, "acme/api,acme/web"), "acme/outils");
+    expect(selectedRepos(db, "acme/api,acme/web")).toEqual(["acme/api", "acme/web", "acme/outils"]);
+  });
+
+  it("adds nothing twice, whatever the case it is typed in", () => {
+    const db = openDb();
+    followRepo(db, ["x/y"], "z/w");
+    followRepo(db, selectedRepos(db, undefined), "Z/W");
+    expect(selectedRepos(db, undefined)).toEqual(["x/y", "z/w"]);
+  });
+
+  it("refuses a name that is not owner/name and follows nothing", () => {
+    const db = openDb();
+    expect(() => followRepo(db, ["acme/api"], "outils")).toThrow("Not a repository: outils");
+    expect(selectedRepos(db, "acme/api")).toEqual(["acme/api"]);
   });
 });
 

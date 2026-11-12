@@ -82,6 +82,8 @@ export interface ReviewRow {
   skills: string;
   created_at: string;
   updated_at: string;
+  /** When the PR was approved from the Desk; an approval given on GitHub itself is not recorded here. */
+  approved_at?: string | null;
 }
 
 export interface PullRequest {
@@ -193,6 +195,31 @@ export interface LocalReviewDto extends ReviewDto {
   totalFindings: number;
   branch: string;
   base: string;
+}
+
+/** A PR review as the home screen lists it. */
+export interface RecentReviewDto extends ReviewDto {
+  /** Findings still standing (open or posted), counted per severity; a severity with none is absent. */
+  severities: Partial<Record<Severity, number>>;
+  postedFindings: number;
+  /** The open findings, each with Jev's probability that it holds (null = not judged). */
+  openFindings: { id: string; jevHolds: number | null }[];
+  /** Approved from the Desk since the last run reported. */
+  approved: boolean;
+}
+
+export interface RecentReviewsDto {
+  reviews: RecentReviewDto[];
+  hasMore: boolean;
+  /** False when Jev is off: no finding will ever be judged. */
+  jevEnabled: boolean;
+}
+
+/** What pasting a PR on the home screen did: a run started, or the existing review is shown instead. */
+export interface PasteReviewDto {
+  id: string;
+  started: boolean;
+  reason?: "running" | "unchanged";
 }
 
 export interface ReviewEvent {
