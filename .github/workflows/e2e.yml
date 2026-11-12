@@ -7,10 +7,9 @@ name: e2e
 # and commit the changed files under .e2e/cache/.
 # The app runs against fake gh and claude (e2e/harness/bin): no GitHub token, no Claude token.
 
+# Paused: no automatic runs for now; it still runs by hand from the Actions tab.
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
