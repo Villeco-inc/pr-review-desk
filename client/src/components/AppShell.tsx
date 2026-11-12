@@ -208,6 +208,7 @@ function Rail({
 }
 
 const SYSTEMS: { value: System; label: string }[] = [
+  { value: "linea", label: "Linea" },
   { value: "brutal", label: "Brutal" },
   { value: "blueprint", label: "Blueprint" },
 ];

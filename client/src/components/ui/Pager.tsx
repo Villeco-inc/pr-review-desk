@@ -19,7 +19,7 @@ export default function Pager({ label, prevLabel, nextLabel, onPrev, onNext, pre
   return (
     <div className="flex items-center gap-2">
       <span className="label-caps text-fg-3">{label}</span>
-      <div role="group" aria-label={label} className="inline-flex edge">
+      <div role="group" aria-label={label} className="inline-flex overflow-hidden edge">
         <button
           type="button"
           className={BTN}

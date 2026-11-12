@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-export type System = "brutal" | "blueprint";
+export type System = "linea" | "brutal" | "blueprint";
 export type Theme = "light" | "dark";
 
-export const DEFAULT_SYSTEM: System = "brutal"; // the committed direction
+export const DEFAULT_SYSTEM: System = "linea"; // the Linea design system, as in linea-web-v2
 export const DEFAULT_THEME: Theme = "light";
 
 /** Gate for the visible switch; the dual tokens cost nothing either way. */
@@ -46,7 +46,7 @@ function store(key: string, value: string) {
 }
 
 export function SystemProvider({ children }: { children: ReactNode }) {
-  const [system, setSystem] = useState<System>(() => initial("system", ["brutal", "blueprint"], DEFAULT_SYSTEM));
+  const [system, setSystem] = useState<System>(() => initial("system", ["linea", "brutal", "blueprint"], DEFAULT_SYSTEM));
   const [theme, setTheme] = useState<Theme>(() => initial("theme", ["light", "dark"], DEFAULT_THEME));
 
   useEffect(() => {

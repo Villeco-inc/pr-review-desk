@@ -1,20 +1,23 @@
-# Theming — two systems behind one switch
+# Theming — three systems behind one switch
 
-The redesign ships **two** design systems, not one. They are not a light/dark
-pair: they are two different visual languages that happen to share a token grid.
+The app ships **three** design systems. They are not a light/dark pair: they are
+different visual languages that share a token grid. **Linea** is the default: it
+follows the design system of `linea-web-v2` (`src/index.css` and `DESIGN.md` in
+that repo) for colours, radius, borders and sentence-case type, and keeps the
+Desk's own fonts.
 
-| | Neo-brutalism | Blueprint |
-| --- | --- | --- |
-| Ground | warm bone `#EDE9E0` | graph paper `#F7F8F7`, 22px grid |
-| Border | 2px ink | 1px hairline |
-| Radius | 0 | 2px |
-| Elevation | hard 5px offset shadow | none, ever |
-| Display | Anton | Martian Mono 800 |
-| UI | Archivo | JetBrains Mono |
-| Severity / status | filled colour block | coloured label, quiet box |
-| Reads like | a poster | a spec sheet |
+| | Linea | Neo-brutalism | Blueprint |
+| --- | --- | --- | --- |
+| Ground | white cards on a pale slate page | warm bone `#EDE9E0` | graph paper `#F7F8F7`, 22px grid |
+| Border | 1px | 2px ink | 1px hairline |
+| Radius | `0.375–0.875rem` on every `edge` box | 0 | 2px |
+| Elevation | none | hard 5px offset shadow | none, ever |
+| Display | Archivo 700, sentence case | Anton | Martian Mono 800 |
+| UI | Archivo | Archivo | JetBrains Mono |
+| Severity / status | pale family fill, dark text (Linéa Bleu, Solaire, Forêt) | filled colour block | coloured label, quiet box |
+| Reads like | the Linea apps | a poster | a spec sheet |
 
-Both have a dark mode. Four combinations total, and `index.css` carries all four.
+All three have a dark mode. Six combinations total, and `index.css` carries all six.
 
 ## How it works
 
@@ -23,7 +26,7 @@ against them. The other three combinations are plain CSS-variable overrides in
 `@layer base`, keyed off two attributes on `<html>`:
 
 ```html
-<html data-system="brutal|blueprint" data-theme="light|dark">
+<html data-system="linea|brutal|blueprint" data-theme="light|dark">
 ```
 
 Because `bg-surface` compiles to `background-color: var(--color-surface)`, every
@@ -46,6 +49,14 @@ non-colour variables, declared on `:root` and overridden per system:
 
 Plus `--font-sans` / `--font-display`, `--row-h`, `--ctl-h`, `--page-pad`.
 
+Linea sets six more, which the other systems leave unset so their fallbacks
+apply: `--edge-radius` (the radius the `edge` utility draws), `--label-font`,
+`--label-size`, `--label-weight`, `--label-transform` (for `label-caps`) and
+`--display-transform` (for `display-title`). Components still write their titles
+as `font-display uppercase`; under Linea a rule on `.font-display` sets them in
+sentence case, bold and tight. A box that fills a child to its edge (`Segmented`,
+`Pager`) carries `overflow-hidden` so the fill follows the rounded corner.
+
 ### Utilities, not raw classes
 
 Three rules keep the switch honest:
@@ -67,10 +78,10 @@ Both are in `index.css`; components just add `press`.
 Add `client/src/components/SystemProvider.tsx`:
 
 ```tsx
-type System = "brutal" | "blueprint";
+type System = "linea" | "brutal" | "blueprint";
 type Theme = "light" | "dark";
 
-const DEFAULT_SYSTEM: System = "brutal";   // the committed direction
+const DEFAULT_SYSTEM: System = "linea";
 const DEFAULT_THEME: Theme = "light";
 ```
 
@@ -84,7 +95,7 @@ app does not flash the wrong system:
 <script>
   try {
     var d = document.documentElement.dataset;
-    d.system = localStorage.getItem("prd:system") || "brutal";
+    d.system = localStorage.getItem("prd:system") || "linea";
     d.theme  = localStorage.getItem("prd:theme")  || "light";
   } catch (e) {}
 </script>
@@ -99,7 +110,7 @@ Lives at the bottom of the rail, above the repo switcher. Two segmented
 controls stacked, both built from the same `Segmented` primitive:
 
 ```
-SYSTEM   [ BRUTAL | BLUEPRINT ]
+SYSTEM   [ LINEA | BRUTAL | BLUEPRINT ]
 MODE     [ LIGHT  | DARK      ]
 ```
 
