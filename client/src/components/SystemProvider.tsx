@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-export type System = "linea" | "brutal" | "blueprint";
+const SYSTEMS = ["linea", "brutal", "blueprint", "linear"] as const;
+export type System = (typeof SYSTEMS)[number];
 export type Theme = "light" | "dark";
 
 export const DEFAULT_SYSTEM: System = "linea"; // the Linea design system, as in linea-web-v2
@@ -46,7 +47,7 @@ function store(key: string, value: string) {
 }
 
 export function SystemProvider({ children }: { children: ReactNode }) {
-  const [system, setSystem] = useState<System>(() => initial("system", ["linea", "brutal", "blueprint"], DEFAULT_SYSTEM));
+  const [system, setSystem] = useState<System>(() => initial("system", SYSTEMS, DEFAULT_SYSTEM));
   const [theme, setTheme] = useState<Theme>(() => initial("theme", ["light", "dark"], DEFAULT_THEME));
 
   useEffect(() => {

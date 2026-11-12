@@ -5,7 +5,7 @@ import Avatar from "./ui/Avatar";
 import { useQuery } from "../hooks/useApi";
 import { useRepos } from "../hooks/useRepos";
 import { JUMP_KEY_LABEL, isMac } from "./CommandPalette";
-import { Segmented } from "./ui/Field";
+import { Segmented, Select } from "./ui/Field";
 import { SETTINGS_SHOW_SYSTEM_SWITCH, useSystem, type System, type Theme } from "./SystemProvider";
 import { useNotificationPermission, useUnreadCount } from "../hooks/useNotifications";
 import { AutoReviewSwitch } from "./AutoReviewToggles";
@@ -230,6 +230,7 @@ const SYSTEMS: { value: System; label: string }[] = [
   { value: "linea", label: "Linea" },
   { value: "brutal", label: "Brutal" },
   { value: "blueprint", label: "Blueprint" },
+  { value: "linear", label: "Linear" },
 ];
 const THEMES: { value: Theme; label: string }[] = [
   { value: "light", label: "Light" },
@@ -241,7 +242,21 @@ function SystemSwitch() {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="px-1 label-caps text-rail-fg">System</span>
-      <Segmented block ariaLabel="Design system" value={system} onChange={setSystem} options={SYSTEMS} />
+      <Select
+        aria-label="Design system"
+        wrapperClassName="w-full"
+        value={system}
+        onChange={(e) => {
+          const picked = SYSTEMS.find((o) => o.value === e.target.value);
+          if (picked) setSystem(picked.value);
+        }}
+      >
+        {SYSTEMS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </Select>
       <span className="mt-1.5 px-1 label-caps text-rail-fg">Mode</span>
       <Segmented block ariaLabel="Colour mode" value={theme} onChange={setTheme} options={THEMES} />
     </div>

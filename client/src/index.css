@@ -1,8 +1,8 @@
-/* Two design systems, one token grid (from docs/redesign/index.css).
+/* Four design systems, one token grid (from docs/redesign/index.css).
    Token NAMES never change between systems, so components read bg-surface / text-fg
    and follow whichever system is active. See docs/redesign/theming.md. */
 
-@import url("https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Martian+Mono:wght@400;600;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Martian+Mono:wght@400;600;800&display=swap");
 @import "tailwindcss";
 
 /* Defaults live in @theme so Tailwind generates the utilities.
@@ -166,7 +166,7 @@
 }
 
 @layer base {
-  /* Non-colour structural tokens. These are what actually make the two systems
+  /* Non-colour structural tokens. These are what actually make the systems
      look different — see theming.md. */
   :root {
     --font-scale: 1.08;
@@ -549,6 +549,161 @@
     --color-avatar-4: var(--color-subtle-2);
   }
 
+  /* LINEAR · light — after the Linear app (linear.app): Inter, an indigo accent, hairlines,
+     small radii and tighter rows. Badges are a neutral box whose dot carries the signal. */
+  [data-system="linear"] {
+    --signal-red: #eb5757;
+    --signal-orange: #f2994a;
+    --signal-yellow: #d9a514;
+    --signal-green: #27a644;
+    --signal-blue: #2f80ed;
+
+    --font-sans: "Inter", "Helvetica Neue", Helvetica, sans-serif;
+    --font-display: var(--font-sans);
+    --label-font: var(--font-sans);
+    --label-size: 11px;
+    --label-weight: 500;
+    --label-transform: none;
+    --display-transform: none;
+    --edge-radius: var(--radius-md);
+
+    --bw: 1px;
+    --grid-color: transparent;
+    --grid-size: 0px;
+    --label-tracking: 0;
+    --row-h: 44px;
+    --ctl-h: 32px;
+    --page-pad: 24px;
+    --h1-weight: 600;
+    --h1-tracking: -0.02em;
+
+    --color-page: #fbfbfc;
+    --color-surface: #ffffff;
+    --color-subtle: #f4f5f8;
+    --color-subtle-2: #ecedf0;
+    --color-border: #e3e4e8;
+    --color-border-soft: #eeeff2;
+    --color-fg: #1b1c1f;
+    --color-fg-2: #3c4149;
+    --color-fg-3: #6b6f76;
+    --color-muted: #6b6f76;
+    --color-faint: #6b6f76;
+
+    --color-primary: #5e6ad2;
+    --color-primary-hover: #4f5abf;
+    --color-primary-fg: #ffffff;
+    --color-highlight: #eceefb;
+
+    --color-success: var(--signal-green); --color-success-ink: #1e7e34;
+    --color-warn: var(--signal-orange);   --color-warn-ink: #a85a10;
+    --color-danger: var(--signal-red);    --color-danger-ink: #c93b3b;
+
+    --color-sev-blocker-bg: var(--color-surface); --color-sev-blocker-fg: var(--color-fg-2);
+    --color-sev-high-bg: var(--color-surface);    --color-sev-high-fg: var(--color-fg-2);
+    --color-sev-medium-bg: var(--color-surface);  --color-sev-medium-fg: var(--color-fg-2);
+    --color-sev-low-bg: var(--color-surface);     --color-sev-low-fg: var(--color-fg-2);
+    --color-sev-nit-bg: var(--color-surface);     --color-sev-nit-fg: var(--color-fg-3);
+    --color-st-none-bg: var(--color-surface);     --color-st-none-fg: var(--color-fg-3);
+    --color-st-queued-bg: var(--color-surface);   --color-st-queued-fg: var(--color-fg-2);
+    --color-st-running-bg: var(--color-surface);  --color-st-running-fg: var(--color-fg-2);
+    --color-st-reported-bg: var(--color-surface); --color-st-reported-fg: var(--color-fg-2);
+    --color-st-failed-bg: var(--color-surface);   --color-st-failed-fg: var(--color-fg-2);
+    /* Label bands have no dot, so they keep a pale fill: on the neutral status tokens every tone would look alike. */
+    --color-tone-info-bg: var(--color-highlight);       --color-tone-info-fg: var(--color-acid-fg);
+    --color-tone-problem-bg: var(--color-danger-soft);  --color-tone-problem-fg: var(--color-danger-ink);
+    --color-tone-summary-bg: var(--color-success-soft); --color-tone-summary-fg: var(--color-success-ink);
+
+    --color-diff-add-bg: #e9f7ee; --color-diff-add-fg: #1e7e34; --color-diff-add-gutter: #d3efdc;
+    --color-diff-del-bg: #fdecec; --color-diff-del-fg: #c93b3b; --color-diff-del-gutter: #f9d7d7;
+    --color-diff-hunk-bg: var(--color-subtle); --color-diff-hunk-fg: var(--color-fg-3);
+    --color-diff-hl-bg: var(--color-highlight); --color-diff-hl-fg: var(--color-fg); --color-diff-hl-gutter: #d9dcf6;
+
+    --color-term-bg: #0f1011; --color-term-border: #23252a; --color-term-fg: #f7f8f8;
+    --color-term-muted: #8a8f98; --color-term-tool: #9aa2ee;
+
+    --color-rail-bg: #f7f8f9; --color-rail-fg: #6b6f76;
+    --color-rail-hover: #ecedf0; --color-rail-line: #e3e4e8;
+
+    --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-xl: 12px;
+    --shadow-lift: none; --shadow-lift-sm: none; --shadow-press: none;
+    --shadow-sm: none; --shadow-md: none; --shadow-lg: none;
+
+    --color-acid: var(--color-highlight);
+    --color-acid-fg: #3f49a8;
+    --color-row-hover: var(--color-subtle);
+    --color-acid-soft: var(--color-highlight);
+    --color-rail-accent: var(--color-primary);
+    --color-inverse-accent: #9aa2ee;
+    --color-danger-soft: #fdecec;
+    --color-success-soft: #e9f7ee;
+    --color-term-line: #3a3d44;
+    --color-diff-hl-marker: var(--color-primary);
+    --shadow-toast-ok: none;
+    --shadow-toast-err: none;
+    --color-danger-fg: #ffffff;
+    --color-seg-on-bg: var(--color-primary);
+    --color-seg-on-fg: var(--color-primary-fg);
+    --color-avatar-1: #dfe2f8;
+    --color-avatar-2: #fbe5cf;
+    --color-avatar-3: #d3efdc;
+    --color-avatar-4: var(--color-subtle-2);
+    --color-avatar-fg: var(--color-fg);
+    --color-sev-blocker-dot: var(--signal-red);
+    --color-sev-high-dot: var(--signal-orange);
+    --color-sev-medium-dot: var(--signal-yellow);
+    --color-sev-low-dot: var(--signal-blue);
+    --color-sev-nit-dot: var(--color-fg-3);
+    --color-st-none-dot: var(--color-fg-3);
+    --color-st-queued-dot: var(--color-primary);
+    --color-st-running-dot: var(--signal-yellow);
+    --color-st-reported-dot: var(--signal-green);
+    --color-st-failed-dot: var(--signal-red);
+  }
+
+  /* LINEAR · dark */
+  [data-system="linear"][data-theme="dark"] {
+    --signal-yellow: #f2c94c;
+    --signal-green: #4cb782;
+    --signal-blue: #4ea7fc;
+
+    --color-page: #08090a;
+    --color-surface: #101113;
+    --color-subtle: #1a1b1e;
+    --color-subtle-2: #232428;
+    --color-border: #26282d;
+    --color-border-soft: #1c1d21;
+    --color-fg: #f7f8f8;
+    --color-fg-2: #d0d6e0;
+    --color-fg-3: #8a8f98;
+    --color-muted: #8a8f98;
+    --color-faint: #8a8f98;
+
+    --color-primary: #5e6ad2;
+    --color-primary-hover: #6c78e6;
+    --color-highlight: #1e2140;
+
+    --color-success-ink: #6fd3a0;
+    --color-warn-ink: #f2b27a;
+    --color-danger-ink: #ff8585;
+
+    --color-diff-add-bg: #12281c; --color-diff-add-fg: #6fd3a0; --color-diff-add-gutter: #1a3a29;
+    --color-diff-del-bg: #2e1517; --color-diff-del-fg: #ff8585; --color-diff-del-gutter: #451e21;
+    --color-diff-hl-gutter: #2a2f5c;
+
+    --color-term-bg: #050506;
+
+    --color-rail-bg: #0c0d0e; --color-rail-fg: #8a8f98;
+    --color-rail-hover: #1a1b1e; --color-rail-line: #26282d;
+
+    --color-acid-fg: #b4baf2;
+    --color-inverse-accent: #4f5abf;
+    --color-danger-soft: #2e1517;
+    --color-success-soft: #12281c;
+    --color-avatar-1: #2a2f5c;
+    --color-avatar-2: #4a3016;
+    --color-avatar-3: #1a3a29;
+  }
+
   *, ::before, ::after, ::backdrop, ::file-selector-button { border-color: var(--color-border); }
   html, body, #root { height: 100%; }
   body {
@@ -573,7 +728,7 @@
    that is what lets --bw swap 2px to 1px in one place. They set the width only:
    the colour defaults to --color-border (see the base rule below), so a colour
    utility such as `border-rail-line` or `border-transparent` still wins. */
-/* Only `edge` draws a whole box, so it alone takes the corner radius (0 outside Linea). */
+/* Only `edge` draws a whole box, so it alone takes the corner radius (0 outside Linea and Linear). */
 @utility edge { border-width: var(--bw); border-style: solid; border-radius: var(--edge-radius, 0px); }
 @utility edge-t { border-top-width: var(--bw); border-top-style: solid; }
 @utility edge-b { border-bottom-width: var(--bw); border-bottom-style: solid; }
@@ -600,19 +755,45 @@
 }
 [data-system="blueprint"] .press:hover,
 [data-system="blueprint"] .press:active,
-[data-system="linea"] .press:hover { transform: none; box-shadow: none; }
+[data-system="linea"] .press:hover,
+[data-system="linear"] .press:hover { transform: none; box-shadow: none; }
 [data-system="blueprint"] .press:hover { border-color: var(--color-fg-3); }
-/* Linea: hover shifts colour, never position; pressed sinks by a pixel (DESIGN.md, Motion). */
-[data-system="linea"] .press:hover { border-color: var(--color-primary); }
-[data-system="linea"] .press:active { transform: translateY(1px); box-shadow: none; }
-/* Components write their titles as `font-display uppercase`: Linea sets them in sentence case, bold and tight. */
-[data-system="linea"] .font-display {
+/* Linea and Linear: hover shifts colour, never position; pressed sinks by a pixel (DESIGN.md, Motion). */
+[data-system="linea"] .press:hover,
+[data-system="linear"] .press:hover { border-color: var(--color-primary); }
+[data-system="linea"] .press:active,
+[data-system="linear"] .press:active { transform: translateY(1px); box-shadow: none; }
+/* Components write their titles as `font-display uppercase`: Linea and Linear set them in sentence case, bold and tight. */
+[data-system="linea"] .font-display,
+[data-system="linear"] .font-display {
   text-transform: none;
   font-weight: var(--h1-weight);
   letter-spacing: var(--h1-tracking);
 }
 
-/* --label-* and --display-transform are set by Linea only, which writes labels and titles in sentence case. */
+/* Linear badges are a neutral box, so a dot carries the signal. No component draws one: the badges
+   take their fill from the bg-sev-* and bg-st-* utilities, and these selectors hook on those classes. */
+[data-system="linear"] :is(.bg-sev-blocker-bg, .bg-sev-high-bg, .bg-sev-medium-bg, .bg-sev-low-bg, .bg-sev-nit-bg, .bg-st-none-bg, .bg-st-queued-bg, .bg-st-running-bg, .bg-st-reported-bg, .bg-st-failed-bg)::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 9999px;
+  background: var(--badge-dot);
+}
+[data-system="linear"] .bg-sev-blocker-bg { --badge-dot: var(--color-sev-blocker-dot); }
+[data-system="linear"] .bg-sev-high-bg { --badge-dot: var(--color-sev-high-dot); }
+[data-system="linear"] .bg-sev-medium-bg { --badge-dot: var(--color-sev-medium-dot); }
+[data-system="linear"] .bg-sev-low-bg { --badge-dot: var(--color-sev-low-dot); }
+[data-system="linear"] .bg-sev-nit-bg { --badge-dot: var(--color-sev-nit-dot); }
+[data-system="linear"] .bg-st-none-bg { --badge-dot: var(--color-st-none-dot); }
+[data-system="linear"] .bg-st-queued-bg { --badge-dot: var(--color-st-queued-dot); }
+[data-system="linear"] .bg-st-running-bg { --badge-dot: var(--color-st-running-dot); }
+[data-system="linear"] .bg-st-reported-bg { --badge-dot: var(--color-st-reported-dot); }
+[data-system="linear"] .bg-st-failed-bg { --badge-dot: var(--color-st-failed-dot); }
+
+/* --label-* and --display-transform are set by Linea and Linear only, which write labels and titles in sentence case. */
 @utility label-caps {
   font-family: var(--label-font, var(--font-mono));
   font-size: calc(var(--label-size, 10px) * var(--font-scale));

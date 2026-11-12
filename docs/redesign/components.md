@@ -5,8 +5,9 @@ Token names are unchanged, so a component that only reads `bg-surface` /
 the structural vocabulary: border width, radius, shadow, height, and the places
 that hard-code a hex or an old grey step.
 
-> **Two systems.** Everything below must work in both neo-brutalism and
-> blueprint without a conditional — components read token names only, and the
+> **Four systems.** Written for neo-brutalism and blueprint; the app now also
+> ships Linea and Linear, four systems and eight combinations with dark mode.
+> Everything below must work in every one of them without a conditional — components read token names only, and the
 > structural difference comes from `--bw` / `--radius-*` / `--shadow-lift` via
 > the `edge` / `lift` / `press` utilities. Read `theming.md` first.
 

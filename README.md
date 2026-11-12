@@ -82,7 +82,7 @@ The review compares **commits**: `base...branch` in that checkout. Work that is 
 - **Deadpool**: when the folder `DEADPOOL_REVIEWS_DIR` exists, every verdict file Deadpool writes there (`<ticket>/<date>-<dev>-tour<n>-<verdict>.md`) is read every 30 seconds. Its findings join the local review of the reviewed branch, in the repo whose history holds the reviewed commit, marked **Deadpool**, and you treat them like any other finding. A later round marks the open findings of the earlier ones resolved, since Deadpool lists again every finding that still holds. The files are only read; a verdict whose commit is in none of your local repos is left out, and the server log says so.
 - **Sessions**: the **Session** button on a review shows the latest run of the agent: model, turns, duration, tokens, cost, the full prompt and every event it streamed. Earlier runs are one click away.
 - **Every screen has its own URL**. Refresh, Back and Forward work, and each list remembers your last repository and that repository's filters.
-- **Look**: switch between two design systems (Brutal, Blueprint), in light or dark, at the bottom of the left rail.
+- **Look**: switch between four design systems (Linea, Brutal, Blueprint, Linear), in light or dark, at the bottom of the left rail.
 
 ### Keyboard
 
@@ -163,7 +163,7 @@ npx e2e run e2e/tests/findings.e2e.ts --headed   # one file, in a visible browse
 ```
 
 - **Agent steps.** `agent.act` moves through the app (Anthropic, token from `ant auth print-credentials --profile e2e`; another profile with `E2E_ANT_PROFILE`). Every step is replayed from `.e2e/cache/`, which is committed: a run that changes nothing makes no model call.
-- **Add a flow.** Write it as a function in `e2e/flows.ts` and register it in a file under `e2e/tests/`. Start with `resetWorld()`, follow each `agent.act` with an `expect` on the screen (that is what lets the cache record it), and check everything in code: `expect` on the screen, the database and the fake CLIs' journals through `e2e/harness/world-state.ts` (`ghWrites()` is what would have reached GitHub). Never `agent.assert`: it calls the model on every run. Match texts with `/…/i`, since two design systems print them in capitals. New PRs, diffs or review reports go in `e2e/fixtures/`.
+- **Add a flow.** Write it as a function in `e2e/flows.ts` and register it in a file under `e2e/tests/`. Start with `resetWorld()`, follow each `agent.act` with an `expect` on the screen (that is what lets the cache record it), and check everything in code: `expect` on the screen, the database and the fake CLIs' journals through `e2e/harness/world-state.ts` (`ghWrites()` is what would have reached GitHub). Never `agent.assert`: it calls the model on every run. Match texts with `/…/i`, since two of the four design systems print them in capitals. New PRs, diffs or review reports go in `e2e/fixtures/`.
 - **Refresh the cache.** After a UI change, run `npm run test:e2e`: steps that no longer replay are done again by the agent and recorded. Commit what changed under `.e2e/cache/`. `npx e2e cache ls` lists the entries, `npx e2e cache clear` starts over.
 - **When it fails.** Each failed test has a trace page under `.e2e/results/`, the server log is in `.e2e/logs/app.log`, and `E2E_KEEP_WORLD=1` keeps the world folder (database, journals) after the run.
 - **Cost.** After each `npm run test:e2e`, a line gives the run's model calls and their estimated cost (`9 tests · 0 appel · 0,000 $`), with the steps that called the model, and is added to `.e2e/cost-history.jsonl`. `npm run e2e:cost` computes it again on the last report (`-- --report <file>` for another one).
@@ -181,4 +181,4 @@ Express and SQLite on the server, React and Vite in the client, TanStack Router 
 | `server/src/services/run-log.ts` | Records every run (the Session screen) |
 | `server/src/services/github.ts`, `local-git.ts` | GitHub and local git access |
 | `client/src/router.tsx` | Every screen and its URL |
-| `client/src/index.css` | Both design systems; see `docs/redesign/theming.md` |
+| `client/src/index.css` | The four design systems; see `docs/redesign/theming.md` |

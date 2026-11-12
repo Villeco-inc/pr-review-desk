@@ -1,5 +1,10 @@
 # Redesign handoff — two design systems, one switch, new navigation
 
+> **Since this handoff.** The app now ships four design systems, each in light
+> and dark, eight combinations in all: Linea (the default), Neo-brutalism,
+> Blueprint and Linear. This document was written for the first two; what it says
+> of "both systems" holds for all four. `theming.md` describes them.
+
 This folder is the brief for implementing the new design in `client/`.
 It was derived from a design canvas built against this repo; the canvas is the
 visual source of truth and the docs here are the implementation contract.

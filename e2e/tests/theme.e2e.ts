@@ -3,13 +3,13 @@ import { expect } from "e2e";
 import { PR, editAndPostComment, reviewPullRequest } from "../flows";
 import { resetWorld } from "../harness/world-state";
 
-// The same flows in the Blueprint system, dark mode. The switch is set in code (a click on each
-// radio), and checked on <html>, where the theme applies, and again after a reload.
+// The same flows in the Blueprint system, dark mode. The switch is set in code (the system in its
+// list, the mode by its radio), and checked on <html>, where the theme applies, and again after a reload.
 describe("in Blueprint, dark", () => {
   beforeEach(async ({ app, screen, browser }) => {
     resetWorld({ repos: [PR.repo] }); // no repository picker over the rail
     await app.open("/prs");
-    await screen.getByRole("radio", "Blueprint").tap();
+    await screen.getByRole("combobox", "Design system").selectOption({ value: "blueprint" });
     await screen.getByRole("radio", "Dark").tap();
     const html = browser.locator("html");
     await expect(html).toHaveAttribute("data-system", "blueprint");
