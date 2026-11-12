@@ -9,6 +9,7 @@ const PATHS = {
   external: <><path d="M14 3h7v7" /><path d="M10 14 21 3" /><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" /></>,
   check: <path d="m5 12 5 5L20 7" strokeWidth={2.5} />,
   checkCircle: <><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 5-5" /></>,
+  plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
   play: <path d="M7 5v14l11-7z" fill="currentColor" stroke="none" />,
   stop: <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none" />,
   terminal: <><path d="m4 17 6-5-6-5" /><path d="M12 19h8" /></>,

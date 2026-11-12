@@ -53,16 +53,20 @@ export default function App() {
   };
 
   // The section is derived from the path prefix — never stored separately.
-  const section: Section = routeId.startsWith("/local")
-    ? "local"
-    : routeId.startsWith("/compare")
-      ? "compare"
-      : routeId.startsWith("/activity")
-        ? "activity"
-        : "prs";
+  const section: Section =
+    routeId === "/"
+      ? "new"
+      : routeId.startsWith("/local")
+        ? "local"
+        : routeId.startsWith("/compare")
+          ? "compare"
+          : routeId.startsWith("/activity")
+            ? "activity"
+            : "prs";
 
   const crumbs: CrumbItem[] = [];
-  if (section === "prs") crumbs.push({ label: "Pull requests", onClick: go.prList });
+  if (section === "new") crumbs.push({ label: "New", onClick: go.home });
+  else if (section === "prs") crumbs.push({ label: "Pull requests", onClick: go.prList });
   else if (section === "local") crumbs.push({ label: "Local branches", onClick: go.localList });
   else if (section === "compare") crumbs.push({ label: "Compare", onClick: go.compareList });
   else crumbs.push({ label: "Activity", onClick: () => go.activity() });
@@ -97,7 +101,7 @@ export default function App() {
       <AppShell
         section={section}
         crumbs={<Crumbs items={crumbs} />}
-        onNavigate={(s) => (s === "local" ? go.localList() : s === "compare" ? go.compareList() : s === "activity" ? go.activity() : go.prList())}
+        onNavigate={(s) => (s === "new" ? go.home() : s === "local" ? go.localList() : s === "compare" ? go.compareList() : s === "activity" ? go.activity() : go.prList())}
         onJump={() => setPaletteOpen(true)}
         onPickRepos={() => setPickerOpen(true)}
         onOpenNotifications={() => setNotificationsOpen(true)}

@@ -10,8 +10,8 @@ import { SETTINGS_SHOW_SYSTEM_SWITCH, useSystem, type System, type Theme } from 
 import { useNotificationPermission, useUnreadCount } from "../hooks/useNotifications";
 import { AutoReviewSwitch } from "./AutoReviewToggles";
 
-export type Section = "prs" | "local" | "compare" | "activity" | "repos" | "settings";
-export type BuiltSection = "prs" | "local" | "compare" | "activity";
+export type Section = "new" | "prs" | "local" | "compare" | "activity" | "repos" | "settings";
+export type BuiltSection = "new" | "prs" | "local" | "compare" | "activity";
 
 interface ShellContextValue {
   actionsEl: HTMLElement | null;
@@ -80,6 +80,7 @@ interface AppShellProps {
 }
 
 const SECTIONS: { id: Section; label: string; icon: IconName; built: boolean }[] = [
+  { id: "new", label: "New", icon: "plus", built: true },
   { id: "prs", label: "Pull requests", icon: "pullRequest", built: true },
   { id: "local", label: "Local branches", icon: "branch", built: true },
   { id: "compare", label: "Compare", icon: "compare", built: true },

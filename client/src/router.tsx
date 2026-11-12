@@ -4,6 +4,7 @@
 import { useEffect } from "react";
 import { createRootRoute, createRoute, createRouter, redirect, useNavigate } from "@tanstack/react-router";
 import App from "./App";
+import NewReview from "./components/NewReview";
 import PRList from "./components/PRList";
 import PRDetail from "./components/PRDetail";
 import FindingDetail from "./components/FindingDetail";
@@ -45,10 +46,13 @@ const rootRoute = createRootRoute({ component: App, notFoundComponent: UnknownPa
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  beforeLoad: () => {
-    throw redirect({ to: "/prs", replace: true });
-  },
+  component: HomePage,
 });
+
+function HomePage() {
+  const go = useGo();
+  return <NewReview onSelectPR={go.pr} />;
+}
 
 // ── Pull requests ─────────────────────────────────────────────────────────────
 

@@ -87,6 +87,7 @@ export function migrate(database: Database.Database): void {
       value TEXT NOT NULL
     );
   `);
+  addMissingColumns(database, "reviews", { approved_at: "TEXT" });
   addMissingColumns(database, "review_runs", {
     effort_level: "TEXT",
     diff_files: "INTEGER",
