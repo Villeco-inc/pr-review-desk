@@ -20,7 +20,7 @@ export default function NotFound({
         <div className="inline-flex size-12 items-center justify-center edge bg-acid text-acid-fg lift-sm">
           <Icon name="alert" className="size-5" />
         </div>
-        <span className="font-display text-[22px] uppercase leading-none">{title}</span>
+        <span className="font-display text-[length:calc(22px*var(--font-scale))] uppercase leading-none">{title}</span>
         {detail && <span className="max-w-[520px] font-mono text-xs text-fg-3">{detail}</span>}
         <Button variant="acid" className="mt-1" onClick={onBack}>
           <Icon name="arrowLeft" />

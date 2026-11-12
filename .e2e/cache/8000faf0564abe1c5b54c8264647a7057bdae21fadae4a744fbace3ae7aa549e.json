@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-16T02:07:30.789Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap button \"High src/payments/client.ts:14 Retrying…\"",
+        "target": {
+          "role": "button",
+          "name": "High src/payments/client.ts:14 Retrying a charge can bill the customer twice open"
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "e2e/tests/theme.e2e.ts::in%20Blueprint%2C%20dark::edit%20a%20finding%27s%20comment%20and%20post%20it%20inline",
+      "targetId": "desk",
+      "instructionDigest": "eb0bff23a6a9a8ca6c52e83e1107ff9c0af7c88fb55ac3c56db6f9db21ee5bcd",
+      "paramsDigest": "2de238c7d90e53aa1a1da547b306df01edc0ca41d063daa6eca69eabc7636a37",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "I opened the finding \"Retrying a charge can bill the customer twice\" by tapping its row on PR #42. The finding page loaded: its heading shows that title, it's labelled \"Finding 1 of 2\", and it shows the High severity, open status, comment editor and diff.",
+    "startPath": "/prs/acme/widgets/42",
+    "endPath": "/prs/acme/widgets/42/findings/43aed2ce-82d6-4ce1-b7bd-bce37091efae",
+    "endAnchors": [
+      {
+        "role": "button",
+        "name": "widgets #42"
+      },
+      {
+        "text": "Finding"
+      },
+      {
+        "text": "Finding 1 of 2"
+      },
+      {
+        "role": "button",
+        "name": "Previous finding"
+      },
+      {
+        "role": "button",
+        "name": "Next finding"
+      },
+      {
+        "role": "button",
+        "name": "All findings"
+      },
+      {
+        "text": "correctness"
+      },
+      {
+        "role": "heading",
+        "name": "Retrying a charge can bill the customer twice"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "text": "widgets #42"
+      },
+      {
+        "text": "Reported"
+      },
+      {
+        "role": "link",
+        "name": "Open on GitHub"
+      },
+      {
+        "role": "button",
+        "name": "Back to pull requests"
+      },
+      {
+        "role": "heading",
+        "name": "Add retry to the payment client #42"
+      },
+      {
+        "text": "dana-dev"
+      },
+      {
+        "text": "·"
+      },
+      {
+        "text": "feat/payment-retry"
+      }
+    ],
+    "endWaitMs": 12827,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "9416869dbfde4e1078fb97f5543d8c9cdf165c68367f33eda8b780e2694a0345",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "15d027aed4d9125597767007fca15a208ad6017f8f64786f5ec7e297500d20f3",
+      "agentContextDigest": "ebd2b5099b9bf8a508622f2dcaa44c80115bb1c5fc130baa497d028e71b5f3ff"
+    }
+  }
+}

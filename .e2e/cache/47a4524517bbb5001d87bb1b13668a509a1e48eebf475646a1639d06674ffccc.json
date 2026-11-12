@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-16T02:06:25.206Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap button \"Nit src/payments/client.ts:18 Name the …\"",
+        "target": {
+          "role": "button",
+          "name": "Nit src/payments/client.ts:18 Name the retry limit open"
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "e2e/tests/findings.e2e.ts::findings::dismiss%20a%20finding%2C%20then%20reopen%20it%2C%20across%20reloads",
+      "targetId": "desk",
+      "instructionDigest": "eb0bff23a6a9a8ca6c52e83e1107ff9c0af7c88fb55ac3c56db6f9db21ee5bcd",
+      "paramsDigest": "2ce7e7df1e919444f97c184c9507f8753f7ff816c35467691a1935e3c66b7636",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "The finding \"Name the retry limit\" opened. I tapped it, and the app went to its detail page (/findings/79e856da-…). The page shows the heading \"Name the retry limit\", marked Nit, readability and open, at src/payments/client.ts:18, along with its comment panel and the diff.",
+    "startPath": "/prs/acme/widgets/42",
+    "endPath": "/prs/acme/widgets/42/findings/79e856da-e09b-4204-b2ab-de36ec56fcf7",
+    "endAnchors": [
+      {
+        "role": "button",
+        "name": "widgets #42"
+      },
+      {
+        "text": "Finding"
+      },
+      {
+        "text": "Finding 2 of 2"
+      },
+      {
+        "role": "button",
+        "name": "Previous finding"
+      },
+      {
+        "role": "button",
+        "name": "Next finding"
+      },
+      {
+        "role": "button",
+        "name": "All findings"
+      },
+      {
+        "text": "readability"
+      },
+      {
+        "role": "heading",
+        "name": "Name the retry limit"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "text": "widgets #42"
+      },
+      {
+        "text": "Reported"
+      },
+      {
+        "role": "link",
+        "name": "Open on GitHub"
+      },
+      {
+        "role": "button",
+        "name": "Back to pull requests"
+      },
+      {
+        "role": "heading",
+        "name": "Add retry to the payment client #42"
+      },
+      {
+        "text": "dana-dev"
+      },
+      {
+        "text": "·"
+      },
+      {
+        "text": "feat/payment-retry"
+      }
+    ],
+    "endWaitMs": 13069,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "9416869dbfde4e1078fb97f5543d8c9cdf165c68367f33eda8b780e2694a0345",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "15d027aed4d9125597767007fca15a208ad6017f8f64786f5ec7e297500d20f3",
+      "agentContextDigest": "ebd2b5099b9bf8a508622f2dcaa44c80115bb1c5fc130baa497d028e71b5f3ff"
+    }
+  }
+}

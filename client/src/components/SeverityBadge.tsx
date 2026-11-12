@@ -20,7 +20,7 @@ export default function SeverityBadge({
   const s = STYLES[severity] ?? STYLES.nit;
   return (
     <span
-      className={`inline-flex h-[26px] items-center whitespace-nowrap edge px-2 label-caps text-[11px] tracking-[.07em] leading-none ${
+      className={`inline-flex h-[26px] items-center whitespace-nowrap edge px-2 label-caps text-[length:calc(11px*var(--font-scale))] tracking-[.07em] leading-none ${
         count !== undefined ? "font-mono" : ""
       } ${s} ${className}`}
     >

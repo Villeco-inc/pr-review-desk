@@ -117,7 +117,8 @@ export default function FindingDetail({
   }
 
   const isPosted = finding.state === "posted";
-  const isDismissed = finding.state === "dismissed";
+  // A finding a later run found fixed reopens the same way a dismissed one does.
+  const isDismissed = finding.state === "dismissed" || finding.state === "resolved";
 
   const handleBlurSave = async () => {
     if (comment === (finding.draftComment ?? finding.suggestedComment)) return;
@@ -166,10 +167,16 @@ export default function FindingDetail({
       ? `https://github.com/${review?.repo ?? repo}/blob/HEAD/${finding.file}#L${finding.startLine}${finding.endLine ? `-L${finding.endLine}` : ""}`
       : null;
 
+  const FOLLOWUP_TITLE: Record<string, string> = { resolved: "Fixed by later commits", still_present: "Still there after later commits", unclear: "Later commits: unclear" };
   const evidenceLeft = [
+    finding.followupStatus && {
+      title: FOLLOWUP_TITLE[finding.followupStatus],
+      body: finding.followupNote || "No note from the second pass.",
+      tone: finding.followupStatus === "resolved" ? ("summary" as const) : ("info" as const),
+    },
     finding.background && { title: "Background", body: finding.background, tone: "info" as const },
     finding.problem && { title: "Problem", body: finding.problem, tone: "problem" as const },
-  ].filter(Boolean) as { title: string; body: string; tone: "info" | "problem" }[];
+  ].filter(Boolean) as { title: string; body: string; tone: "info" | "problem" | "summary" }[];
   const hasEvidence = evidenceLeft.length > 0 || !!finding.suggestedFix;
 
   const evidence = hasEvidence && (
@@ -253,7 +260,7 @@ export default function FindingDetail({
             {finding.category && <Chip>{finding.category}</Chip>}
             <FindingStateBadge state={finding.state} />
           </div>
-          <h1 className="text-xl font-bold leading-[28px] tracking-[-0.015em]">{finding.title}</h1>
+          <h1 className="text-xl font-bold leading-[calc(28px*var(--font-scale))] tracking-[-0.015em]">{finding.title}</h1>
           {githubUrl ? (
             <a href={githubUrl} target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-1.5 font-mono text-xs text-fg-2 hover:bg-acid hover:text-acid-fg focus-ring">
               <Icon name="file" className="size-3.5 text-fg-3" />
@@ -275,7 +282,7 @@ export default function FindingDetail({
             <Button variant={isDismissed ? "plain" : "danger"} onClick={handleDismissToggle} disabled={isPosted || dismissFinding.loading || reopenFinding.loading}>
               {isDismissed ? "Reopen" : "Dismiss"}
             </Button>
-            <Button variant="primary" onClick={handlePost} disabled={isPosted || postFinding.loading}>
+            <Button variant="primary" onClick={handlePost} disabled={isPosted || finding.state === "resolved" || postFinding.loading}>
               <Icon name="send" />
               {isPosted ? "Posted" : "Post comment"}
             </Button>
@@ -296,7 +303,7 @@ export default function FindingDetail({
             <Card className="flex flex-col">
               <div className="flex h-11 items-center gap-2 edge-b pl-4 pr-3">
                 <span className="label-caps">Comment</span>
-                <span className="font-mono text-[11px] text-fg-3">
+                <span className="font-mono text-[length:calc(11px*var(--font-scale))] text-fg-3">
                   {saveState === "saving" ? "saving…" : saveState === "saved" ? "draft saved" : finding.draftComment ? "edited" : "suggested"}
                 </span>
                 <div className="ml-auto">

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
 import { configuredLocalRepos, listLocalBranches, defaultBaseBranch, localRepoIdentity, getLocalDiff } from "../services/local-git";
-import { startLocalReview, reviewId } from "../services/review-engine";
+import { startLocalReview, cleanInstructions, reviewId } from "../services/review-engine";
 import { splitUnifiedDiff } from "../services/diff-utils";
 import { toFindingDto, toReviewDto } from "../services/dto";
 import type { FindingRow, ReviewRow } from "../../../shared/types";
@@ -56,13 +56,14 @@ localRouter.get("/local/diff-summary", async (req, res) => {
 });
 
 localRouter.post("/local/reviews", async (req, res) => {
-  const { repo: label, branch, base, skills, model, effort } = req.body as {
+  const { repo: label, branch, base, skills, model, effort, instructions } = req.body as {
     repo?: string;
     branch?: string;
     base?: string;
     skills?: string[];
     model?: string;
     effort?: string;
+    instructions?: string;
   };
 
   const repo = configuredLocalRepos().find((r) => r.label === label);
@@ -79,7 +80,8 @@ localRouter.post("/local/reviews", async (req, res) => {
       base,
       Array.isArray(skills) ? skills : [],
       model || undefined,
-      effort || undefined
+      effort || undefined,
+      cleanInstructions(instructions)
     );
     res.status(202).json(result);
   } catch (err) {

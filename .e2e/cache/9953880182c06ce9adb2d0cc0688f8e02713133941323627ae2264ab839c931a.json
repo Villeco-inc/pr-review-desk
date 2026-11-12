@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-16T02:06:09.261Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap button \"Post comment\" (2 of 2)",
+        "target": {
+          "role": "button",
+          "name": "Post comment",
+          "position": {
+            "index": 1,
+            "of": 2
+          }
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "e2e/tests/findings.e2e.ts::findings::edit%20a%20finding%27s%20comment%20and%20post%20it%20inline",
+      "targetId": "desk",
+      "instructionDigest": "a37f2c2b15335100578bbfb61d3b3b455d55f5e23c2c8f2a86fbfbff408d8287",
+      "paramsDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "I clicked \"Post comment\" in the finding's comment panel, and the app confirmed the comment was posted to GitHub. The finding's status changed from \"open\" to \"posted\", and the header button now reads \"Posted\" and is disabled. The panel says \"Posted as comment\" and has a \"View on GitHub\" link. A noti…",
+    "startPath": "/prs/acme/widgets/42/findings/a21c120d-1cde-4fcf-a8a8-573f0b66f3db",
+    "endPath": "/prs/acme/widgets/42/findings/a21c120d-1cde-4fcf-a8a8-573f0b66f3db",
+    "endAnchors": [
+      {
+        "role": "status",
+        "name": "Comment posted on #42 View Dismiss notification"
+      },
+      {
+        "text": "posted"
+      },
+      {
+        "role": "button",
+        "name": "Posted"
+      },
+      {
+        "text": "draft saved"
+      },
+      {
+        "text": "Posted as comment"
+      },
+      {
+        "role": "link",
+        "name": "View on GitHub"
+      },
+      {
+        "text": "Comment posted on #42"
+      },
+      {
+        "role": "link",
+        "name": "View"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "text": "open"
+      },
+      {
+        "role": "button",
+        "name": "Post comment"
+      },
+      {
+        "text": "edited"
+      },
+      {
+        "role": "button",
+        "name": "Reset to suggested"
+      }
+    ],
+    "endWaitMs": 12866,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "9416869dbfde4e1078fb97f5543d8c9cdf165c68367f33eda8b780e2694a0345",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "15d027aed4d9125597767007fca15a208ad6017f8f64786f5ec7e297500d20f3",
+      "agentContextDigest": "ebd2b5099b9bf8a508622f2dcaa44c80115bb1c5fc130baa497d028e71b5f3ff"
+    }
+  }
+}

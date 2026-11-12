@@ -4,17 +4,19 @@ import AppShell, { Crumbs, type CrumbItem, type Section } from "./components/App
 import { ToastProvider } from "./components/ui/Toast";
 import CommandPalette, { type JumpTarget } from "./components/CommandPalette";
 import RepoPicker from "./components/RepoPicker";
+import NotificationsPanel from "./components/NotificationsPanel";
 import { useRepos } from "./hooks/useRepos";
 import { useGo } from "./nav";
 import { compareRepoFromSegment, reviewRepoFromSegment } from "./lib/url-state";
 import { trackScreen } from "./lib/telemetry";
-import { useReviewNotifications } from "./hooks/useReviewNotifications";
+import { useDeskNotifications } from "./hooks/useNotifications";
 
 /** The root layout: rail, crumb bar and palette around whichever route is active. */
 export default function App() {
   const go = useGo();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const { data: repos } = useRepos();
   // Nothing picked and no REPOS in .env: the PR list has nothing to show until repositories are picked.
   const mustPick = repos !== null && repos.length === 0;
@@ -23,7 +25,7 @@ export default function App() {
   const params = (leaf?.params ?? {}) as Record<string, string | undefined>;
   const search = (leaf?.search ?? {}) as { branch?: string; base?: string; head?: string };
   const location = useLocation();
-  useReviewNotifications();
+  useDeskNotifications();
 
   useEffect(() => {
     trackScreen(location.pathname, location.searchStr, routeId);
@@ -98,10 +100,12 @@ export default function App() {
         onNavigate={(s) => (s === "local" ? go.localList() : s === "compare" ? go.compareList() : s === "activity" ? go.activity() : go.prList())}
         onJump={() => setPaletteOpen(true)}
         onPickRepos={() => setPickerOpen(true)}
+        onOpenNotifications={() => setNotificationsOpen(true)}
       >
         <Outlet />
       </AppShell>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onJump={jump} />
+      {notificationsOpen && <NotificationsPanel onClose={() => setNotificationsOpen(false)} />}
       {(pickerOpen || mustPick) && <RepoPicker selected={repos ?? []} required={mustPick} onClose={() => setPickerOpen(false)} />}
     </ToastProvider>
   );

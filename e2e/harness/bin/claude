@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+// A fake Claude Code CLI for the e2e world. It reads the prompt like `claude -p` does, then
+// streams stream-json events whose final text is a fixed report: report-local.json for the local
+// repo's diff, report-pr.json for anything else. A test can hold it running (claude-hold, below).
+// It never calls a model. Each run, with its prompt, is noted in $E2E_WORLD/claude-calls.jsonl.
+
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fixtures");
+const WORLD = process.env.E2E_WORLD;
+const DELAY_MS = Number(process.env.FAKE_CLAUDE_DELAY_MS ?? 300);
+const args = process.argv.slice(2);
+
+if (args.includes("--version")) {
+  process.stdout.write("0.0.0-e2e (Claude Code, fake)\n");
+  process.exit(0);
+}
+if (!WORLD) {
+  process.stderr.write("fake claude: E2E_WORLD is not set: it only runs inside the e2e world\n");
+  process.exit(1);
+}
+
+const chunks = [];
+process.stdin.on("data", (c) => chunks.push(c));
+process.stdin.on("end", () => {
+  const prompt = Buffer.concat(chunks).toString("utf8");
+  const reportFile = prompt.includes("src/math.ts") ? "report-local.json" : "report-pr.json";
+  const report = fs.readFileSync(path.join(FIXTURES, reportFile), "utf8");
+  fs.appendFileSync(path.join(WORLD, "claude-calls.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, args, promptChars: prompt.length, prompt, report: reportFile })}\n`);
+
+  const model = args.includes("--model") ? args[args.indexOf("--model") + 1] : "default";
+  const session = "e2e-fake-session";
+  const line = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
+
+  line({ type: "system", subtype: "init", session_id: session, model, tools: [] });
+  // A test that wants to see the review running creates $E2E_WORLD/claude-hold, and deletes it
+  // to let the review finish (holdClaude / releaseClaude in world-state.ts).
+  const hold = path.join(WORLD, "claude-hold");
+  const startedAt = Date.now();
+  const finish = () => {
+    if (fs.existsSync(hold) && Date.now() - startedAt < 60_000) return setTimeout(finish, 100);
+    setTimeout(report_, DELAY_MS);
+  };
+  finish();
+  function report_() {
+    const text = `Here is the review.\n\n${report}`;
+    line({ type: "assistant", session_id: session, message: { role: "assistant", content: [{ type: "text", text }] } });
+    line({
+      type: "result",
+      subtype: "success",
+      session_id: session,
+      is_error: false,
+      num_turns: 1,
+      duration_ms: DELAY_MS,
+      total_cost_usd: 0,
+      usage: { input_tokens: Math.round(prompt.length / 4), output_tokens: Math.round(report.length / 4), cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      result: text,
+    });
+    process.exit(0);
+  }
+});

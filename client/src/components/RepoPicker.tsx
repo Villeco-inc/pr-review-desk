@@ -74,7 +74,7 @@ export default function RepoPicker({ selected, required, onClose }: { selected: 
         onKeyDown={onKeyDown}
       >
         <div className="flex shrink-0 flex-col gap-1 edge-b px-5 py-4">
-          <h2 id="repo-picker-title" className="font-display text-[22px] uppercase leading-none">
+          <h2 id="repo-picker-title" className="font-display text-[length:calc(22px*var(--font-scale))] uppercase leading-none">
             Pick your repositories
           </h2>
           <p className="text-fg-2">
@@ -91,7 +91,7 @@ export default function RepoPicker({ selected, required, onClose }: { selected: 
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by name…"
             aria-label="Filter repositories"
-            className="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-fg-3"
+            className="min-w-0 flex-1 bg-transparent text-[length:calc(15px*var(--font-scale))] outline-none placeholder:text-fg-3"
           />
         </label>
 
@@ -123,7 +123,7 @@ export default function RepoPicker({ selected, required, onClose }: { selected: 
                   className="flex h-10 cursor-pointer items-center gap-3 edge-soft-b px-5 last:border-b-0 hover:bg-row-hover"
                 >
                   <Checkbox checked={checked} onChange={() => toggle(repo)} ariaLabel={repo} />
-                  <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{repo}</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-[length:calc(13px*var(--font-scale))]">{repo}</span>
                 </div>
               );
             })

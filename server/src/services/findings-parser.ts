@@ -1,4 +1,4 @@
-import type { Finding, Reference, Report, Severity } from "../../../shared/types";
+import type { Finding, FollowupStatus, PreviousFindingVerdict, Reference, Report, Severity } from "../../../shared/types";
 import { SEVERITIES } from "../../../shared/types";
 
 export interface ParseWarning {
@@ -123,6 +123,21 @@ function extractFindingsArray(parsed: unknown): unknown[] | null {
   return null;
 }
 
+const FOLLOWUP_STATUSES = new Set(["resolved", "still_present", "unclear"]);
+
+/** The second-pass verdicts on earlier findings; anything malformed is dropped, never guessed. */
+function extractPreviousFindings(parsed: unknown): PreviousFindingVerdict[] {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  const raw = (parsed as Record<string, unknown>).previousFindings;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const { id, status, note } = item as Record<string, unknown>;
+    if (typeof id !== "string" || typeof status !== "string" || !FOLLOWUP_STATUSES.has(status)) return [];
+    return [{ id, status: status as FollowupStatus, note: typeof note === "string" ? note : "" }];
+  });
+}
+
 function extractSummary(parsed: unknown): string {
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     return pickString(parsed as Record<string, unknown>, "summary", "overview");
@@ -213,7 +228,7 @@ export function parseReport(raw: string): ParseResult {
   if (repaired) warnings.unshift({ index: -1, reason: "the report had unescaped quotes or line breaks inside its text; they were escaped" });
 
   return {
-    report: { summary: extractSummary(parsed), findings },
+    report: { summary: extractSummary(parsed), findings, previousFindings: extractPreviousFindings(parsed) },
     warnings,
     error: null,
   };

@@ -145,7 +145,7 @@ export default function Combobox({
                   aria-selected={isSelected}
                   onClick={() => select(o.value)}
                   onMouseEnter={() => setActiveIndex(i)}
-                  className={`flex h-9 w-full items-center gap-2 edge-soft-b px-2.5 text-left text-[13px] outline-none last:border-b-0 ${
+                  className={`flex h-9 w-full items-center gap-2 edge-soft-b px-2.5 text-left text-[length:calc(13px*var(--font-scale))] outline-none last:border-b-0 ${
                     isActive ? "bg-acid text-acid-fg" : ""
                   }`}
                 >

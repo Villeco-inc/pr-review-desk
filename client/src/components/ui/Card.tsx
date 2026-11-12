@@ -36,7 +36,7 @@ export function Chip({ children, mono = false, className = "" }: { children: Rea
   return (
     <span
       className={`inline-flex h-[22px] items-center edge bg-surface px-1.5 leading-none text-fg ${
-        mono ? "font-mono text-[11px] font-medium" : "label-caps"
+        mono ? "font-mono text-[length:calc(11px*var(--font-scale))] font-medium" : "label-caps"
       } ${className}`}
     >
       {children}

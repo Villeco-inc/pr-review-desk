@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { DISCUSSION_QUERY, parseDiscussion, type PrDiscussion } from "./discussion";
 import { promisify } from "node:util";
 import { track } from "../db/telemetry";
 import type { PullRequest } from "../../../shared/types";
@@ -118,6 +119,17 @@ export async function fetchPullRequests(repo: string): Promise<PullRequest[]> {
   return (JSON.parse(stdout) as GhPrListItem[]).map((item) => toPullRequest(repo, item));
 }
 
+/** A file's text at `ref`, or null when it does not exist there. */
+export async function fetchRepoFile(repo: string, path: string, ref: string): Promise<string | null> {
+  const url = `repos/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`;
+  try {
+    return await runGh(["api", url, "-H", "Accept: application/vnd.github.raw"]);
+  } catch (err) {
+    if (/\b404\b|Not Found/.test((err as Error).message)) return null;
+    throw err;
+  }
+}
+
 export async function fetchPrDiff(repo: string, number: number): Promise<string> {
   return runGh(["pr", "diff", String(number), "-R", repo]);
 }
@@ -148,56 +160,22 @@ export async function fetchPrSnapshot(repo: string, number: number): Promise<PrS
   return JSON.parse(stdout) as PrSnapshot;
 }
 
-export interface ExistingReviewComment {
-  author: string;
-  path: string | null;
-  line: number | null;
-  body: string;
-  url: string;
-}
-
-export interface ExistingReview {
-  author: string;
-  state: string;
-  body: string;
-  url: string;
-  submittedAt: string;
-}
-
-export async function fetchExistingReviews(
-  repo: string,
-  number: number
-): Promise<{ reviews: ExistingReview[]; comments: ExistingReviewComment[] }> {
-  const [reviewsRaw, commentsRaw] = await Promise.all([
-    runGh(["api", "--paginate", `repos/${repo}/pulls/${number}/reviews`]),
-    runGh(["api", "--paginate", `repos/${repo}/pulls/${number}/comments`]),
-  ]);
-
-  const reviews = (JSON.parse(reviewsRaw) as Record<string, unknown>[])
-    .map((r) => ({
-      author: (r.user as { login?: string })?.login ?? "",
-      state: String(r.state ?? ""),
-      body: String(r.body ?? ""),
-      url: String(r.html_url ?? ""),
-      submittedAt: String(r.submitted_at ?? ""),
-    }))
-    .filter((r) => r.body.trim() !== "" || r.state !== "COMMENTED");
-
-  const comments = (JSON.parse(commentsRaw) as Record<string, unknown>[]).map((c) => ({
-    author: (c.user as { login?: string })?.login ?? "",
-    path: typeof c.path === "string" ? c.path : null,
-    line: typeof c.line === "number" ? c.line : typeof c.original_line === "number" ? c.original_line : null,
-    body: String(c.body ?? ""),
-    url: String(c.html_url ?? ""),
-  }));
-
-  return { reviews, comments };
+/** Reviews, conversation and inline threads with their replies, in one GraphQL call (first 100 of each). */
+export async function fetchPrDiscussion(repo: string, number: number): Promise<PrDiscussion> {
+  const [owner, name] = repo.split("/");
+  const raw = await runGh(["api", "graphql", "-f", `query=${DISCUSSION_QUERY.replace(/\s+/g, " ")}`, "-f", `owner=${owner}`, "-f", `name=${name}`, "-F", `number=${number}`]);
+  return parseDiscussion(JSON.parse(raw));
 }
 
 export async function getHeadSha(repo: string, number: number): Promise<string> {
   const stdout = await runGh(["pr", "view", String(number), "-R", repo, "--json", "headRefOid"]);
   const parsed = JSON.parse(stdout) as { headRefOid: string };
   return parsed.headRefOid;
+}
+
+export async function fetchCheckRollup(repo: string, number: number): Promise<unknown> {
+  const stdout = await runGh(["pr", "view", String(number), "-R", repo, "--json", "statusCheckRollup"]);
+  return (JSON.parse(stdout) as { statusCheckRollup?: unknown }).statusCheckRollup;
 }
 
 export async function postInlineComment(
@@ -412,4 +390,62 @@ export async function fetchCompare(repo: string, base: string, head: string): Pr
 
 export async function fetchCompareDiff(repo: string, base: string, head: string): Promise<string> {
   return runGh(["api", "-H", "Accept: application/vnd.github.diff", `repos/${repo}/compare/${compareRange(base, head)}`]);
+}
+
+// ── Watching: what the notification poller reads ──
+
+export interface ReviewRequestedPr {
+  repo: string;
+  number: number;
+  title: string;
+  url: string;
+  author: string;
+}
+
+/** Open PRs asking for the viewer's review, directly or through one of their teams, across every repository. */
+export async function searchReviewRequested(): Promise<ReviewRequestedPr[]> {
+  const stdout = await runGh(["search", "prs", "--review-requested=@me", "--state=open", "--limit", "200", "--json", "repository,number,title,url,author"]);
+  const items = JSON.parse(stdout) as { repository: { nameWithOwner: string }; number: number; title: string; url: string; author: { login: string } | null }[];
+  return items.map((i) => ({ repo: i.repository.nameWithOwner, number: i.number, title: i.title, url: i.url, author: i.author?.login ?? "" }));
+}
+
+export interface OpenPrHead {
+  number: number;
+  title: string;
+  url: string;
+  headRefOid: string;
+}
+
+/** Every open PR of a repository with its head commit. Uncached: the poller needs what GitHub has now. */
+export async function listOpenPrHeads(repo: string): Promise<OpenPrHead[]> {
+  const stdout = await runGh(["pr", "list", "-R", repo, "--state", "open", "--limit", "200", "--json", "number,title,url,headRefOid"]);
+  return JSON.parse(stdout) as OpenPrHead[];
+}
+
+export interface PrReviewComment {
+  id: number;
+  /** The thread's first comment: GitHub points every reply at it. */
+  inReplyToId: number | null;
+  author: string;
+  isBot: boolean;
+  body: string;
+  url: string;
+  createdAt: string;
+}
+
+/** Every inline review comment of a PR, replies included. */
+export async function listPrReviewComments(repo: string, number: number): Promise<PrReviewComment[]> {
+  const stdout = await runGh(["api", "--paginate", `repos/${repo}/pulls/${number}/comments?per_page=100`]);
+  return (JSON.parse(stdout) as Record<string, unknown>[]).map((c) => {
+    const user = c.user as { login?: string; type?: string } | null;
+    return {
+      id: Number(c.id),
+      inReplyToId: typeof c.in_reply_to_id === "number" ? c.in_reply_to_id : null,
+      author: user?.login ?? "",
+      isBot: user?.type === "Bot",
+      body: String(c.body ?? ""),
+      url: String(c.html_url ?? ""),
+      createdAt: String(c.created_at ?? ""),
+    };
+  });
 }

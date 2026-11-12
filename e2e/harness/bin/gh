@@ -1,0 +1,190 @@
+#!/usr/bin/env node
+// A fake GitHub CLI for the e2e world. The server under test finds it first on PATH and gets
+// answers from e2e/fixtures/github.json, never from GitHub. Every call goes to gh-calls.jsonl,
+// every write (POST) to gh-writes.jsonl, every refusal to gh-failures.jsonl, all in $E2E_WORLD,
+// where the tests read them.
+// A command this file does not know fails loudly instead of reaching anything real.
+
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fixtures");
+const WORLD = process.env.E2E_WORLD;
+const args = process.argv.slice(2);
+
+if (!WORLD) fail("E2E_WORLD is not set: the fake gh only runs inside the e2e world");
+
+const github = JSON.parse(fs.readFileSync(path.join(FIXTURES, "github.json"), "utf8"));
+append("gh-calls.jsonl", { args });
+
+function append(file, entry) {
+  fs.appendFileSync(path.join(WORLD, file), `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`);
+}
+
+function fail(message) {
+  if (WORLD) append("gh-failures.jsonl", { args, message });
+  process.stderr.write(`fake gh: ${message}\n`);
+  process.exit(1);
+}
+
+function out(value) {
+  process.stdout.write(typeof value === "string" ? value : JSON.stringify(value));
+  process.exit(0);
+}
+
+/** The flags gh takes, split into the positionals and the repeated -f/-F fields. */
+function parse(argv) {
+  const takesValue = new Set(["--review-requested", "--author", "-R", "--repo", "-X", "--method", "-H", "--header", "-q", "--jq", "--json", "--state", "--limit", "-f", "--raw-field", "-F", "--field"]);
+  const positionals = [];
+  const fields = {};
+  const flags = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith("-")) {
+      positionals.push(a);
+      continue;
+    }
+    if (!takesValue.has(a)) {
+      flags[a] = true;
+      continue;
+    }
+    const value = argv[++i];
+    if (a === "-f" || a === "--raw-field" || a === "-F" || a === "--field") {
+      const eq = value.indexOf("=");
+      const key = value.slice(0, eq);
+      const raw = value.slice(eq + 1);
+      fields[key] = a.startsWith("-F") || a === "--field" ? typed(raw) : raw;
+    } else {
+      flags[a] = value;
+    }
+  }
+  return { positionals, fields, flags };
+}
+
+/** -F turns numbers and booleans into JSON values, as gh does. */
+function typed(raw) {
+  if (/^-?\d+$/.test(raw)) return Number(raw);
+  if (raw === "true" || raw === "false") return raw === "true";
+  return raw;
+}
+
+function prsOf(repo) {
+  const prs = github.pullRequests[repo];
+  if (!prs) fail(`no fixture for repository ${repo}`);
+  return prs;
+}
+
+function prOf(repo, number) {
+  const pr = prsOf(repo).find((p) => p.number === Number(number));
+  if (!pr) fail(`no fixture for ${repo}#${number}`);
+  return pr;
+}
+
+const url = (repo, number) => `https://github.com/${repo}/pull/${number}`;
+
+function listItem(repo, pr) {
+  return {
+    number: pr.number,
+    title: pr.title,
+    author: { login: pr.author },
+    url: url(repo, pr.number),
+    updatedAt: pr.updatedAt,
+    isDraft: pr.isDraft,
+    additions: pr.additions,
+    deletions: pr.deletions,
+    changedFiles: 1,
+    headRefOid: pr.headRefOid,
+    baseRefName: pr.baseRefName,
+    headRefName: pr.headRefName,
+    labels: pr.labels.map((name) => ({ name })),
+    reviewRequests: [],
+    reviewDecision: "REVIEW_REQUIRED",
+    latestReviews: [],
+  };
+}
+
+function diffOf(pr) {
+  return fs.readFileSync(path.join(FIXTURES, pr.diff), "utf8");
+}
+
+function filesOf(pr) {
+  return [...diffOf(pr).matchAll(/^\+\+\+ b\/(.+)$/gm)].map((m) => ({ path: m[1], additions: pr.additions, deletions: pr.deletions }));
+}
+
+let nextId = 1000;
+/** A write to GitHub: kept in the journal, answered like GitHub would. */
+function write(endpoint, method, fields) {
+  const id = nextId + fs.readFileSync(path.join(WORLD, "gh-calls.jsonl"), "utf8").split("\n").length;
+  append("gh-writes.jsonl", { endpoint, method, fields });
+  const m = endpoint.match(/^repos\/([^/]+\/[^/]+)\/(pulls|issues)\/(\d+)\/(comments|reviews)$/);
+  const html = m ? `${url(m[1], m[3])}#${m[4] === "reviews" ? "pullrequestreview-" : m[2] === "issues" ? "issuecomment-" : "discussion_r"}${id}` : "";
+  out({ id, html_url: html });
+}
+
+function api({ positionals, fields, flags }) {
+  const endpoint = positionals[1];
+  const method = String(flags["-X"] ?? flags["--method"] ?? (Object.keys(fields).length && endpoint !== "graphql" ? "POST" : "GET")).toUpperCase();
+  if (!endpoint) fail("api without an endpoint");
+  if (method !== "GET") return write(endpoint, method, fields);
+
+  if (endpoint === "user") return out({ login: github.viewer });
+  if (endpoint.startsWith("user/repos")) return out(github.repos.join("\n") + "\n");
+  if (endpoint === "graphql" && fields.owner !== undefined) {
+    // The discussion of one PR (reviews, conversation, threads): nobody has said anything yet.
+    return out({ data: { repository: { pullRequest: { reviews: { nodes: [] }, comments: { nodes: [] }, reviewThreads: { nodes: [] } } } } });
+  }
+  if (endpoint === "graphql") {
+    const org = String(fields.q ?? "").match(/org:(\S+)/)?.[1];
+    const nodes = Object.entries(github.pullRequests)
+      .filter(([repo]) => repo.startsWith(`${org}/`))
+      .flatMap(([repo, prs]) =>
+        prs.map((pr) => {
+          const item = listItem(repo, pr);
+          return { ...item, latestReviews: { nodes: [] }, labels: { nodes: item.labels }, repository: { nameWithOwner: repo } };
+        })
+      );
+    return out({ data: { search: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } });
+  }
+
+  let m = endpoint.match(/^repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/(reviews|comments)(\?.*)?$/);
+  if (m) return out([]);
+  m = endpoint.match(/^repos\/([^/]+\/[^/]+)(?:\/(tags|branches|deployments|compare)\b.*)?$/);
+  if (m) {
+    const [, , what] = m;
+    if (what === "tags") return out("");
+    if (what === "branches") return out("main\n");
+    if (what === "deployments") return out([]);
+    if (what === "compare") return out({ ahead_by: 0, behind_by: 0, commits: [], files: [] });
+    return out({ default_branch: "main" });
+  }
+  fail(`unhandled api endpoint: ${endpoint}`);
+}
+
+function pr({ positionals, flags }) {
+  const [, sub, number] = positionals;
+  const repo = flags["-R"] ?? flags["--repo"];
+  if (!repo) fail(`pr ${sub} without -R`);
+  if (sub === "list") return out(prsOf(repo).map((p) => listItem(repo, p)));
+  const fixture = prOf(repo, number);
+  if (sub === "diff") return out(diffOf(fixture));
+  if (sub === "view") {
+    return out({
+      ...listItem(repo, fixture),
+      body: fixture.body,
+      state: "OPEN",
+      comments: [],
+      files: filesOf(fixture),
+    });
+  }
+  fail(`unhandled pr subcommand: ${sub}`);
+}
+
+const parsed = parse(args);
+const command = parsed.positionals[0];
+if (args[0] === "--version") out("gh version 0.0.0-e2e (fake)\n");
+if (command === "api") api(parsed);
+else if (command === "pr") pr(parsed);
+else if (command === "search" && parsed.positionals[1] === "prs") out([]); // no review requested from the viewer
+else if (command === "auth") out("Logged in to github.com as e2e-reviewer (fake)\n");
+else fail(`unhandled command: gh ${args.join(" ")}`);

@@ -50,6 +50,7 @@ function statusOf(pr: PullRequestDto): PrStatus {
 
 const REVIEW_RANK: Record<PullRequestDto["reviewStatus"], number> = {
   none: 0,
+  cancelled: 0,
   queued: 1,
   running: 2,
   failed: 3,
@@ -231,7 +232,7 @@ export default function PRList({
 
       <div className="flex items-end gap-3">
         <div className="flex flex-col gap-1.5">
-          <h1 className="font-display text-[34px] uppercase leading-none tracking-[0.01em]">Pull requests</h1>
+          <h1 className="font-display text-[length:calc(34px*var(--font-scale))] uppercase leading-none tracking-[0.01em]">Pull requests</h1>
           <span className="font-mono text-xs text-fg-3">
             {loading
               ? "Refreshing…"
@@ -284,7 +285,7 @@ export default function PRList({
             onRefresh={refresh}
           />
         ) : (
-          <table className="w-full border-separate border-spacing-0 text-[13px]">
+          <table className="w-full border-separate border-spacing-0 text-[length:calc(13px*var(--font-scale))]">
             <thead>
               <tr>
                 <SortableTh label="#" width="70px" active={sortKey === "number"} dir={sortDir} onClick={() => toggleSort("number")} />
@@ -420,7 +421,7 @@ function EmptyState({ repo, filtered, onRefresh }: { repo: string; filtered: boo
         <Icon name="inbox" className="size-5" />
       </div>
       <div className="flex flex-col gap-1.5">
-        <span className="font-display text-[22px] uppercase leading-none">{filtered ? "No matching pull requests" : "No open pull requests"}</span>
+        <span className="font-display text-[length:calc(22px*var(--font-scale))] uppercase leading-none">{filtered ? "No matching pull requests" : "No open pull requests"}</span>
         <span className="max-w-[380px] text-fg-2">
           {filtered ? (
             "No pull requests match the current filters. Try clearing one."

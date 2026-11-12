@@ -1,0 +1,23 @@
+diff --git a/src/payments/client.ts b/src/payments/client.ts
+index b7d29e9..3393887 100644
+--- a/src/payments/client.ts
++++ b/src/payments/client.ts
+@@ -8,8 +8,16 @@ export class PaymentClient {
+   constructor(private readonly http: HttpClient) {}
+ 
+   async charge(order: Order): Promise<Charge> {
+-    const response = await this.http.post("/charges", order);
+-    return response.json();
++    let attempt = 0;
++    while (true) {
++      try {
++        const response = await this.http.post("/charges", order);
++        return response.json();
++      } catch (err) {
++        attempt++;
++        if (attempt > 3) throw err;
++      }
++    }
+   }
+ 
+   async refund(chargeId: string): Promise<void> {

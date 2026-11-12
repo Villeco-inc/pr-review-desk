@@ -10,6 +10,7 @@ const PATHS = {
   check: <path d="m5 12 5 5L20 7" strokeWidth={2.5} />,
   checkCircle: <><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 5-5" /></>,
   play: <path d="M7 5v14l11-7z" fill="currentColor" stroke="none" />,
+  stop: <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none" />,
   terminal: <><path d="m4 17 6-5-6-5" /><path d="M12 19h8" /></>,
   branch: <><circle cx="6" cy="5" r="2.25" /><circle cx="6" cy="19" r="2.25" /><circle cx="18" cy="8" r="2.25" /><path d="M6 7.25v9.5" /><path d="M18 10.25c0 3-3 4-6 4.5-2.4.4-4 1.2-4 2" /></>,
   alert: <><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5" /><path d="M12 16h.01" /></>,

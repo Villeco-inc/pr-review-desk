@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-16T02:06:50.485Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap button \"View\"",
+        "target": {
+          "role": "button",
+          "name": "View"
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "e2e/tests/local-review.e2e.ts::review%20a%20local%20branch",
+      "targetId": "desk",
+      "instructionDigest": "4cabee7255ecf3a16e8447e54936cd42895dd27d8f16515e997c7bd43eeb49a8",
+      "paramsDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "I pressed View next to \"Last review\", and the review page for \"Add divide()\" opened (sample-app · feat/divide vs main, path /local/sample-app/reviews/sample-app-e9e751fa0b/0). The review is still Running, so Findings shows 0 and the page says \"Findings will appear here as the review progresses.\"",
+    "startPath": "/local/sample-app?branch=feat%2Fdivide&base=main",
+    "endPath": "/local/sample-app/reviews/sample-app-e9e751fa0b/0?branch=feat%2Fdivide&base=main",
+    "endAnchors": [
+      {
+        "role": "button",
+        "name": "Local branches"
+      },
+      {
+        "text": "sample-app · feat/divide"
+      },
+      {
+        "role": "button",
+        "name": "All branches"
+      },
+      {
+        "role": "heading",
+        "name": "Add divide()"
+      },
+      {
+        "text": "sample-app"
+      },
+      {
+        "text": "·"
+      },
+      {
+        "text": "feat/divide"
+      },
+      {
+        "text": "main"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "role": "status",
+        "name": "Review started for feat/divide Dismiss notification"
+      },
+      {
+        "role": "button",
+        "name": "Refresh"
+      },
+      {
+        "role": "heading",
+        "name": "Local branches"
+      },
+      {
+        "text": "Review a local branch before opening a pull request."
+      },
+      {
+        "role": "option",
+        "name": "sample-app",
+        "states": [
+          "selected"
+        ]
+      },
+      {
+        "role": "combobox",
+        "name": "Branch…",
+        "placeholder": "Branch…",
+        "value": "feat/divide"
+      },
+      {
+        "role": "combobox",
+        "name": "Base…",
+        "placeholder": "Base…",
+        "value": "main"
+      },
+      {
+        "text": "Model"
+      }
+    ],
+    "endWaitMs": 13762,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "9416869dbfde4e1078fb97f5543d8c9cdf165c68367f33eda8b780e2694a0345",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "15d027aed4d9125597767007fca15a208ad6017f8f64786f5ec7e297500d20f3",
+      "agentContextDigest": "ebd2b5099b9bf8a508622f2dcaa44c80115bb1c5fc130baa497d028e71b5f3ff"
+    }
+  }
+}

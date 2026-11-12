@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-16T02:07:00.548Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap button \"Add retry to the payment client\" in \"#42\"",
+        "target": {
+          "role": "button",
+          "name": "Add retry to the payment client",
+          "within": "#42"
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "e2e/tests/pr-review.e2e.ts::review%20a%20pull%20request%3A%20running%2C%20then%20reported%20with%20its%20findings",
+      "targetId": "desk",
+      "instructionDigest": "d76d893288f5cbfbeb4ae0d1ee5d3063bc55f02b97c2017a46b7028747ea45ad",
+      "paramsDigest": "37cd44448dd841ed2b614fdef23a3d32ce2b6a9afbe84d3c7daed7f5fc05af4f",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "Opened PR #42 detail page (/prs/acme/widgets/42) showing heading \"Add retry to the payment client #42\".",
+    "startPath": "/prs?repo=acme%2Fwidgets",
+    "endPath": "/prs/acme/widgets/42",
+    "endAnchors": [
+      {
+        "role": "button",
+        "name": "Pull requests"
+      },
+      {
+        "text": "widgets #42"
+      },
+      {
+        "role": "link",
+        "name": "Open on GitHub"
+      },
+      {
+        "text": "PR 2 of 2"
+      },
+      {
+        "role": "button",
+        "name": "Previous pull request"
+      },
+      {
+        "role": "button",
+        "name": "Next pull request"
+      },
+      {
+        "role": "button",
+        "name": "Back to pull requests"
+      },
+      {
+        "role": "heading",
+        "name": "Add retry to the payment client #42"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "role": "button",
+        "name": "Refresh"
+      },
+      {
+        "role": "heading",
+        "name": "Pull requests"
+      },
+      {
+        "text": "2 open · refreshed just now"
+      },
+      {
+        "text": "Author"
+      },
+      {
+        "text": "All"
+      },
+      {
+        "text": "Status"
+      },
+      {
+        "text": "Label"
+      },
+      {
+        "role": "option",
+        "name": "All repos (acme)"
+      }
+    ],
+    "endWaitMs": 12414,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "9416869dbfde4e1078fb97f5543d8c9cdf165c68367f33eda8b780e2694a0345",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "15d027aed4d9125597767007fca15a208ad6017f8f64786f5ec7e297500d20f3",
+      "agentContextDigest": "ebd2b5099b9bf8a508622f2dcaa44c80115bb1c5fc130baa497d028e71b5f3ff"
+    }
+  }
+}

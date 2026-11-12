@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
 import { fetchCompare, fetchRepoRefs } from "../services/github";
-import { compareIdentity, reviewId, startCompareReview } from "../services/review-engine";
+import { compareIdentity, reviewId, startCompareReview, cleanInstructions } from "../services/review-engine";
 import { splitUnifiedDiff } from "../services/diff-utils";
 import { toFindingDto, toReviewDto } from "../services/dto";
 import { selectedRepoNamed } from "../services/repo-selection";
@@ -41,18 +41,19 @@ compareRouter.get("/compare/summary", async (req, res) => {
 });
 
 compareRouter.post("/compare/reviews", async (req, res) => {
-  const { repo: rawRepo, base, head, skills, model, effort } = req.body as {
+  const { repo: rawRepo, base, head, skills, model, effort, instructions } = req.body as {
     repo?: string;
     base?: string;
     head?: string;
     skills?: string[];
     model?: string;
     effort?: string;
+    instructions?: string;
   };
   const repo = knownRepo(rawRepo);
   if (!repo || !base || !head) return void res.status(400).json({ error: "repo, base and head are required" });
   try {
-    res.status(202).json(await startCompareReview(repo, base, head, Array.isArray(skills) ? skills : [], model || undefined, effort || undefined));
+    res.status(202).json(await startCompareReview(repo, base, head, Array.isArray(skills) ? skills : [], model || undefined, effort || undefined, cleanInstructions(instructions)));
   } catch (err) {
     fail(res, err);
   }

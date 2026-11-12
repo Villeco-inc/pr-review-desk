@@ -19,8 +19,8 @@ const VARIANTS: Record<Variant, string> = {
 };
 
 const SIZES: Record<Size, string> = {
-  md: "h-[var(--ctl-h)] px-3.5 text-[12px] [&_svg]:size-[15px]",
-  sm: "h-8 px-2.5 text-[11px] [&_svg]:size-3.5",
+  md: "h-[var(--ctl-h)] px-3.5 text-[length:calc(12px*var(--font-scale))] [&_svg]:size-[15px]",
+  sm: "h-8 px-2.5 text-[length:calc(11px*var(--font-scale))] [&_svg]:size-3.5",
 };
 
 export function buttonClass(variant: Variant = "plain", size: Size = "md", iconOnly = false, extra = "") {

@@ -51,7 +51,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             role="status"
-            className={`pointer-events-auto flex min-w-[300px] max-w-[480px] items-center gap-2.5 edge bg-fg px-3 py-2.5 text-[13px] text-page transition-[opacity,transform] duration-[100ms] ${
+            className={`pointer-events-auto flex min-w-[300px] max-w-[480px] items-center gap-2.5 edge bg-fg px-3 py-2.5 text-[length:calc(13px*var(--font-scale))] text-page transition-[opacity,transform] duration-[100ms] ${
               t.kind === "success" ? "shadow-[var(--shadow-toast-ok)]" : "shadow-[var(--shadow-toast-err)]"
             } ${t.leaving ? "translate-y-2 opacity-0" : "animate-toast-enter"}`}
           >

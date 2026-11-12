@@ -180,3 +180,26 @@ describe("repairJson", () => {
     expect(r.warnings[0].reason).toMatch(/escaped/);
   });
 });
+
+describe("previousFindings", () => {
+  it("keeps well-formed verdicts and drops the rest", () => {
+    const raw = JSON.stringify({
+      summary: "s",
+      findings: [],
+      previousFindings: [
+        { id: "a", status: "resolved", note: "fixed" },
+        { id: "b", status: "still_present" },
+        { id: "c", status: "maybe" },
+        { status: "resolved" },
+      ],
+    });
+    expect(parseReport(raw).report?.previousFindings).toEqual([
+      { id: "a", status: "resolved", note: "fixed" },
+      { id: "b", status: "still_present", note: "" },
+    ]);
+  });
+
+  it("is empty when the report has none", () => {
+    expect(parseReport('{"summary":"s","findings":[]}').report?.previousFindings).toEqual([]);
+  });
+});

@@ -1,0 +1,56 @@
+{
+  "viewer": "e2e-reviewer",
+  "repos": ["acme/archive", "acme/gadgets", "acme/widgets"],
+  "pullRequests": {
+    "acme/widgets": [
+      {
+        "number": 42,
+        "title": "Add retry to the payment client",
+        "author": "dana-dev",
+        "updatedAt": "2026-10-01T14:00:00Z",
+        "isDraft": false,
+        "additions": 10,
+        "deletions": 2,
+        "baseRefName": "main",
+        "headRefName": "feat/payment-retry",
+        "headRefOid": "4242424242424242424242424242424242424242",
+        "labels": ["payments"],
+        "body": "Retries a failed charge up to three times.",
+        "diff": "acme-widgets-42.diff"
+      },
+      {
+        "number": 43,
+        "title": "Bump the date library",
+        "author": "renovate-bot",
+        "updatedAt": "2026-09-30T09:00:00Z",
+        "isDraft": false,
+        "additions": 1,
+        "deletions": 1,
+        "baseRefName": "main",
+        "headRefName": "renovate/date-lib",
+        "headRefOid": "4343434343434343434343434343434343434343",
+        "labels": ["dependencies"],
+        "body": "Updates the date library.",
+        "diff": "trivial.diff"
+      }
+    ],
+    "acme/gadgets": [
+      {
+        "number": 7,
+        "title": "Fix the tooltip overflow",
+        "author": "sam-dev",
+        "updatedAt": "2026-09-28T11:00:00Z",
+        "isDraft": true,
+        "additions": 1,
+        "deletions": 1,
+        "baseRefName": "main",
+        "headRefName": "fix/tooltip",
+        "headRefOid": "0707070707070707070707070707070707070707",
+        "labels": [],
+        "body": "Keeps the tooltip inside the viewport.",
+        "diff": "trivial.diff"
+      }
+    ],
+    "acme/archive": []
+  }
+}

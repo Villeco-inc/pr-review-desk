@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-16T02:07:18.899Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap button \"Start Review\"",
+        "target": {
+          "role": "button",
+          "name": "Start Review"
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "e2e/tests/theme.e2e.ts::in%20Blueprint%2C%20dark::review%20a%20pull%20request",
+      "targetId": "desk",
+      "instructionDigest": "d817446dee118ac3f5138557c7bf406c9838f25eb271859f88271fe0b2026d4e",
+      "paramsDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "The review started. After I tapped \"Start Review\", the button changed to \"Review running…\" and is disabled, and the page shows a \"Running\" status dated \"just now\". The Findings section appeared with 0 findings and the message \"Findings will appear here as the review progresses.\"",
+    "startPath": "/prs/acme/widgets/42",
+    "endPath": "/prs/acme/widgets/42",
+    "endAnchors": [
+      {
+        "text": "Running"
+      },
+      {
+        "role": "button",
+        "name": "Review running…"
+      },
+      {
+        "text": "just now"
+      },
+      {
+        "role": "button",
+        "name": "Thread"
+      },
+      {
+        "text": "Findings"
+      },
+      {
+        "text": "(0)"
+      },
+      {
+        "text": "Findings will appear here as the review progresses."
+      },
+      {
+        "role": "button",
+        "name": "Post selected (0)",
+        "text": "Post selected"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "role": "button",
+        "name": "Start Review"
+      }
+    ],
+    "endWaitMs": 12786,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "9416869dbfde4e1078fb97f5543d8c9cdf165c68367f33eda8b780e2694a0345",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "15d027aed4d9125597767007fca15a208ad6017f8f64786f5ec7e297500d20f3",
+      "agentContextDigest": "ebd2b5099b9bf8a508622f2dcaa44c80115bb1c5fc130baa497d028e71b5f3ff"
+    }
+  }
+}

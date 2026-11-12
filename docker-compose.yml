@@ -6,6 +6,7 @@ services:
     volumes:
       - ./data:/app/data                                # SQLite database and review sessions
       - ${REPOS_ROOT:-${HOME}/Documents}:/repos:ro      # local checkouts, for reviewing branches before a PR
+      - ${DEADPOOL_REVIEWS_DIR:-${HOME}/.cerebro/revues}:/deadpool:ro   # Deadpool's verdict files, shown as findings
     # Start with ./start.sh: it hands GH_TOKEN over from gh and writes CLAUDE_CODE_OAUTH_TOKEN to .env.
     # A missing Claude token stops `docker compose up` with the message below instead of starting a broken app.
     environment:
@@ -16,6 +17,9 @@ services:
       - LOCAL_REPOS=${LOCAL_REPOS:-}
       - LOCAL_REPOS_ROOT=/repos
       - HOST_REPOS_ROOT=${REPOS_ROOT:-${HOME}/Documents}   # to find worktrees, which git records by host path
+      - DEADPOOL_REVIEWS_DIR=/deadpool
       - GH_TOKEN=${GH_TOKEN:-}                          # set by ./start.sh from gh; a value in .env also works
+      - TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}          # optional: Jev judges each new finding (its text goes to TypeSafe)
+      - JEV_MODEL=${JEV_MODEL:-}                        # optional: Jev model, jev-1.13.0 when empty
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:?CLAUDE_CODE_OAUTH_TOKEN is not set in .env - run ./start.sh}
     restart: unless-stopped

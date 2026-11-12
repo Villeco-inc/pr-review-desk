@@ -7,7 +7,8 @@ import { useRepos } from "../hooks/useRepos";
 import { JUMP_KEY_LABEL, isMac } from "./CommandPalette";
 import { Segmented } from "./ui/Field";
 import { SETTINGS_SHOW_SYSTEM_SWITCH, useSystem, type System, type Theme } from "./SystemProvider";
-import { useNotificationPermission } from "../hooks/useReviewNotifications";
+import { useNotificationPermission, useUnreadCount } from "../hooks/useNotifications";
+import { AutoReviewSwitch } from "./AutoReviewToggles";
 
 export type Section = "prs" | "local" | "compare" | "activity" | "repos" | "settings";
 export type BuiltSection = "prs" | "local" | "compare" | "activity";
@@ -46,7 +47,7 @@ export function Crumbs({ items }: { items: CrumbItem[] }) {
       <ol className="flex min-w-0 items-center gap-2">
         {items.map((c, i) => {
           const last = i === items.length - 1;
-          const text = c.mono ? "font-mono text-[12px] font-medium normal-case" : "label-caps";
+          const text = c.mono ? "font-mono text-[length:calc(12px*var(--font-scale))] font-medium normal-case" : "label-caps";
           return (
             <li key={i} className="flex min-w-0 items-center gap-2">
               {i > 0 && <span aria-hidden="true" className="text-fg-3">/</span>}
@@ -75,6 +76,7 @@ interface AppShellProps {
   onNavigate: (section: BuiltSection) => void;
   onJump: () => void;
   onPickRepos: () => void;
+  onOpenNotifications: () => void;
 }
 
 const SECTIONS: { id: Section; label: string; icon: IconName; built: boolean }[] = [
@@ -86,7 +88,7 @@ const SECTIONS: { id: Section; label: string; icon: IconName; built: boolean }[]
   { id: "settings", label: "Settings", icon: "settings", built: false },
 ];
 
-export default function AppShell({ section, crumbs, actions, children, onNavigate, onJump, onPickRepos }: AppShellProps) {
+export default function AppShell({ section, crumbs, actions, children, onNavigate, onJump, onPickRepos, onOpenNotifications }: AppShellProps) {
   const [actionsEl, setActionsEl] = useState<HTMLElement | null>(null);
   const [counts, setCounts] = useState<Partial<Record<Section, number>>>({});
   const setCount = useCallback(
@@ -98,13 +100,14 @@ export default function AppShell({ section, crumbs, actions, children, onNavigat
   return (
     <ShellContext.Provider value={ctx}>
       <div className="flex h-screen overflow-hidden bg-page text-fg">
-        <Rail section={section} counts={counts} onNavigate={onNavigate} onJump={onJump} onPickRepos={onPickRepos} />
+        <Rail section={section} counts={counts} onNavigate={onNavigate} onJump={onJump} onPickRepos={onPickRepos} onOpenNotifications={onOpenNotifications} />
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-[54px] shrink-0 items-center gap-4 edge-b bg-page px-6">
             {crumbs}
             <div ref={setActionsEl} className="ml-auto flex shrink-0 items-center gap-2">
               {actions}
             </div>
+            <AutoReviewSwitch />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         </div>
@@ -119,13 +122,16 @@ function Rail({
   onNavigate,
   onJump,
   onPickRepos,
+  onOpenNotifications,
 }: {
   section: Section;
   counts: Partial<Record<Section, number>>;
   onNavigate: (section: BuiltSection) => void;
   onJump: () => void;
   onPickRepos: () => void;
+  onOpenNotifications: () => void;
 }) {
+  const unread = useUnreadCount();
   const { data: viewer } = useQuery<{ login: string }>("/api/viewer", [], 5 * 60_000);
   const { data: repos } = useRepos();
   const org = repos?.[0]?.split("/")[0];
@@ -134,7 +140,7 @@ function Rail({
     <aside className="flex h-full w-[226px] shrink-0 flex-col gap-5 edge-r bg-rail-bg px-3 py-4">
       <div className="flex items-center gap-2.5 px-1">
         <Icon name="mark" className="size-6 shrink-0 text-rail-accent" strokeWidth={2.2} />
-        <span className="font-display text-[17px] uppercase leading-[18px] tracking-[0.02em] text-rail-accent">
+        <span className="font-display text-[length:calc(17px*var(--font-scale))] uppercase leading-[calc(18px*var(--font-scale))] tracking-[0.02em] text-rail-accent">
           PR Review
           <br />
           Desk
@@ -150,7 +156,7 @@ function Rail({
       >
         <Icon name="search" className="size-3.5 shrink-0" />
         <span className="flex-1 label-caps">Jump to…</span>
-        <kbd className="edge border-rail-line px-1 font-mono text-[10px] leading-[14px]">{JUMP_KEY_LABEL}</kbd>
+        <kbd className="edge border-rail-line px-1 font-mono text-[length:calc(10px*var(--font-scale))] leading-[calc(14px*var(--font-scale))]">{JUMP_KEY_LABEL}</kbd>
       </button>
 
       <nav aria-label="Sections">
@@ -174,11 +180,24 @@ function Rail({
                 >
                   <Icon name={s.icon} className="size-4 shrink-0" />
                   <span className="flex-1 truncate">{s.label}</span>
-                  {count !== undefined && <span className="font-mono text-[11px] tracking-normal">{count}</span>}
+                  {count !== undefined && <span className="font-mono text-[length:calc(11px*var(--font-scale))] tracking-normal">{count}</span>}
                 </button>
               </li>
             );
           })}
+          <li>
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+              onClick={onOpenNotifications}
+              className="flex h-10 w-full items-center gap-2.5 edge border-transparent px-2.5 text-left label-caps text-rail-fg hover:border-rail-line hover:bg-rail-hover focus-ring"
+            >
+              <Icon name="bell" className="size-4 shrink-0" />
+              <span className="flex-1 truncate">Notifications</span>
+              {unread > 0 && <span className="bg-danger px-1.5 font-mono text-[length:calc(11px*var(--font-scale))] tracking-normal text-danger-fg">{unread > 99 ? "99+" : unread}</span>}
+            </button>
+          </li>
         </ul>
       </nav>
 
@@ -193,13 +212,13 @@ function Rail({
           className="flex h-[38px] w-full cursor-default items-center gap-2 edge border-rail-line px-2.5 text-left text-rail-fg focus-ring"
         >
           <Icon name="repo" className="size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{org ?? "—"}</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[length:calc(12px*var(--font-scale))]">{org ?? "—"}</span>
           <Icon name="chevronDown" className="size-3.5 shrink-0" />
         </button>
         {viewer?.login && (
           <div className="flex items-center gap-2 px-1 text-rail-fg">
             <Avatar name={viewer.login} />
-            <span className="truncate font-mono text-[12px]">{viewer.login}</span>
+            <span className="truncate font-mono text-[length:calc(12px*var(--font-scale))]">{viewer.login}</span>
           </div>
         )}
       </div>
@@ -237,7 +256,7 @@ function NotificationsButton() {
     <button
       type="button"
       onClick={request}
-      title="Get a system notification when a review finishes or fails"
+      title="Get a system notification for review outcomes and GitHub events"
       className="flex h-[38px] w-full items-center gap-2 edge border-rail-line px-2.5 text-left text-rail-fg hover:border-rail-accent hover:text-rail-accent focus-ring"
     >
       <Icon name="bell" className="size-3.5 shrink-0" />

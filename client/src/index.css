@@ -9,6 +9,14 @@
    These values are NEO-BRUTALISM / LIGHT. Every other combination is an
    override in @layer base below. */
 @theme {
+  /* Every text size reads --font-scale (set on :root below), so one value resizes the whole app. */
+  --text-xs: calc(0.75rem * var(--font-scale));    --text-xs--line-height: calc(1rem * var(--font-scale));
+  --text-sm: calc(0.875rem * var(--font-scale));   --text-sm--line-height: calc(1.25rem * var(--font-scale));
+  --text-base: calc(1rem * var(--font-scale));     --text-base--line-height: calc(1.5rem * var(--font-scale));
+  --text-lg: calc(1.125rem * var(--font-scale));   --text-lg--line-height: calc(1.75rem * var(--font-scale));
+  --text-xl: calc(1.25rem * var(--font-scale));    --text-xl--line-height: calc(1.75rem * var(--font-scale));
+  --text-2xl: calc(1.5rem * var(--font-scale));    --text-2xl--line-height: calc(2rem * var(--font-scale));
+
   --font-sans: "Archivo", "Helvetica Neue", Helvetica, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   --font-display: "Anton", Impact, sans-serif;
@@ -161,6 +169,7 @@
   /* Non-colour structural tokens. These are what actually make the two systems
      look different — see theming.md. */
   :root {
+    --font-scale: 1.08;
     --bw: 2px;
     --grid-color: transparent;
     --grid-size: 0px;
@@ -550,8 +559,8 @@
     background-size: var(--grid-size) var(--grid-size);
     color: var(--color-fg);
     font-family: var(--font-sans);
-    font-size: 13px;
-    line-height: 20px;
+    font-size: calc(13px * var(--font-scale));
+    line-height: calc(20px * var(--font-scale));
     -webkit-font-smoothing: antialiased;
   }
   ::selection { background-color: var(--color-highlight); }
@@ -606,7 +615,7 @@
 /* --label-* and --display-transform are set by Linea only, which writes labels and titles in sentence case. */
 @utility label-caps {
   font-family: var(--label-font, var(--font-mono));
-  font-size: var(--label-size, 10px);
+  font-size: calc(var(--label-size, 10px) * var(--font-scale));
   font-weight: var(--label-weight, 700);
   letter-spacing: var(--label-tracking);
   text-transform: var(--label-transform, uppercase);

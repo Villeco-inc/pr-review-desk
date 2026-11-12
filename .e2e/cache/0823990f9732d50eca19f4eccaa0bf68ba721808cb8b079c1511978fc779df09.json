@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-16T02:06:50.484Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap combobox \"Branch…\"",
+        "target": {
+          "role": "combobox",
+          "name": "Branch…",
+          "placeholder": "Branch…"
+        }
+      },
+      {
+        "name": "tap",
+        "summary": "tap option \"feat/divide\"",
+        "target": {
+          "role": "option",
+          "name": "feat/divide"
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "e2e/tests/local-review.e2e.ts::review%20a%20local%20branch",
+      "targetId": "desk",
+      "instructionDigest": "67fd21ca3fb0f3834925258bc9643023c5077176940fd35b78826799912a2dc0",
+      "paramsDigest": "91a9e590229730d04267549aa2cd88cce54c02c188c9aee89ecd32ab65aaebf6",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "I set the branch to feat/divide for sample-app, and the base stayed on main. The URL changed to branch=feat%2Fdivide&base=main, and the page now says \"Will review 1 file: 1 commit vs main\". The Start review button is now enabled; I didn't press it.",
+    "startPath": "/local/sample-app?branch=main&base=main",
+    "endPath": "/local/sample-app?branch=feat%2Fdivide&base=main",
+    "endAnchors": [
+      {
+        "role": "combobox",
+        "name": "Branch…",
+        "placeholder": "Branch…",
+        "value": "feat/divide"
+      },
+      {
+        "text": "Will review 1 file: 1 commit vs main"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "role": "combobox",
+        "name": "Branch…",
+        "placeholder": "Branch…",
+        "value": "main"
+      },
+      {
+        "text": "Pick a different base branch to diff against."
+      }
+    ],
+    "endWaitMs": 12712,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "9416869dbfde4e1078fb97f5543d8c9cdf165c68367f33eda8b780e2694a0345",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "15d027aed4d9125597767007fca15a208ad6017f8f64786f5ec7e297500d20f3",
+      "agentContextDigest": "ebd2b5099b9bf8a508622f2dcaa44c80115bb1c5fc130baa497d028e71b5f3ff"
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-16T02:07:00.549Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap button \"Start Review\"",
+        "target": {
+          "role": "button",
+          "name": "Start Review"
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "e2e/tests/pr-review.e2e.ts::review%20a%20pull%20request%3A%20running%2C%20then%20reported%20with%20its%20findings",
+      "targetId": "desk",
+      "instructionDigest": "d817446dee118ac3f5138557c7bf406c9838f25eb271859f88271fe0b2026d4e",
+      "paramsDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "I clicked \"Start Review\" on PR #42 and the review started. The status now reads \"Running\" (started \"just now\"), the button changed to \"Review running…\" and is disabled, and the model, effort, skills and instructions fields are locked. A Findings section appeared with 0 findings and the note \"Findin…",
+    "startPath": "/prs/acme/widgets/42",
+    "endPath": "/prs/acme/widgets/42",
+    "endAnchors": [
+      {
+        "text": "Running"
+      },
+      {
+        "role": "button",
+        "name": "Review running…"
+      },
+      {
+        "text": "just now"
+      },
+      {
+        "role": "button",
+        "name": "Thread"
+      },
+      {
+        "text": "Findings"
+      },
+      {
+        "text": "(0)"
+      },
+      {
+        "text": "Findings will appear here as the review progresses."
+      },
+      {
+        "role": "button",
+        "name": "Post selected (0)",
+        "text": "Post selected"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "role": "button",
+        "name": "Start Review"
+      }
+    ],
+    "endWaitMs": 13023,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "9416869dbfde4e1078fb97f5543d8c9cdf165c68367f33eda8b780e2694a0345",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "15d027aed4d9125597767007fca15a208ad6017f8f64786f5ec7e297500d20f3",
+      "agentContextDigest": "ebd2b5099b9bf8a508622f2dcaa44c80115bb1c5fc130baa497d028e71b5f3ff"
+    }
+  }
+}

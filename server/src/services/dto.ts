@@ -43,10 +43,14 @@ export function toFindingDto(row: FindingRow, patches: FilePatch[]): FindingDto 
     suggestedComment: row.suggested_comment,
     draftComment: row.draft_comment,
     state: row.state as FindingDto["state"],
+    runId: row.run_id ?? null,
+    followupStatus: (row.followup_status as FindingDto["followupStatus"]) ?? null,
+    followupNote: row.followup_note ?? null,
     commentUrl: row.comment_url,
     postedAt: row.posted_at,
     postedAs: row.posted_as as FindingDto["postedAs"],
     references: JSON.parse(row.references_json || "[]"),
     postAnchor,
+    source: row.source === "deadpool" ? "deadpool" : "desk",
   };
 }

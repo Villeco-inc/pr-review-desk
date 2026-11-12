@@ -63,7 +63,7 @@ export default function DiffViewer({
                   <tr key={idx}>
                     <td
                       colSpan={4}
-                      className="h-[26px] whitespace-pre bg-diff-hunk-bg pl-3.5 text-[11px] text-diff-hunk-fg"
+                      className="h-[26px] whitespace-pre bg-diff-hunk-bg pl-3.5 text-[length:calc(11px*var(--font-scale))] text-diff-hunk-fg"
                     >
                       {line.content}
                     </td>

@@ -24,9 +24,19 @@ export interface Finding {
   references: Reference[];
 }
 
+/** The agent's verdict, on a second pass, about a finding from an earlier run. */
+export type FollowupStatus = "resolved" | "still_present" | "unclear";
+
+export interface PreviousFindingVerdict {
+  id: string;
+  status: FollowupStatus;
+  note: string;
+}
+
 export interface Report {
   summary: string;
   findings: Finding[];
+  previousFindings: PreviousFindingVerdict[];
 }
 
 export interface FindingRow {
@@ -51,6 +61,12 @@ export interface FindingRow {
   posted_at: string | null;
   posted_as: string;
   references_json: string;
+  run_id: string | null;
+  created_at: string | null;
+  followup_status: string | null;
+  followup_note: string | null;
+  /** Who wrote it: NULL for the Desk's own runs, 'deadpool' for a finding read from a Deadpool verdict file. */
+  source: string | null;
 }
 
 export interface ReviewRow {
@@ -92,7 +108,7 @@ export interface PullRequest {
 export type MyReviewState = "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED";
 
 export interface PullRequestDto extends PullRequest {
-  reviewStatus: "none" | "queued" | "running" | "reported" | "failed";
+  reviewStatus: "none" | "queued" | "running" | "reported" | "failed" | "cancelled";
   /** null when the viewer has not reviewed, or when the cached list predates latestReviews (refresh fills it). */
   myReview: MyReviewState | null;
   openFindings: number;
@@ -132,13 +148,24 @@ export interface FindingDto {
   suggestedFix: string;
   suggestedComment: string;
   draftComment: string | null;
-  state: "open" | "posted" | "dismissed";
+  /** resolved: a later run found it fixed while it was still open. */
+  state: "open" | "posted" | "dismissed" | "resolved";
+  /** The run that produced it; null for findings from before runs were recorded per finding. */
+  runId: string | null;
+  followupStatus: FollowupStatus | null;
+  followupNote: string | null;
   commentUrl: string | null;
   postedAt: string | null;
   postedAs: "comment" | "pending-review";
   references: Reference[];
   postAnchor: PostAnchor;
+  /** deadpool: read from a Deadpool verdict (~/.cerebro/revues), not produced by a Desk run. */
+  source: FindingSource;
+  /** Jev's probability that the finding holds (null = not judged); only on the latest-review read. */
+  jevHolds?: number | null;
 }
+
+export type FindingSource = "desk" | "deadpool";
 
 export interface PostAnchor {
   kind: "line" | "file" | "pull-request";
@@ -152,7 +179,7 @@ export interface ReviewDto {
   repo: string;
   number: number;
   title: string;
-  status: "queued" | "running" | "reported" | "failed";
+  status: "queued" | "running" | "reported" | "failed" | "cancelled";
   summary: string;
   error: string | null;
   skills: string[];
@@ -214,6 +241,10 @@ export interface ReviewRunRow {
   cache_read_tokens: number | null;
   cache_creation_tokens: number | null;
   error: string | null;
+  mode: string | null;
+  head_sha: string | null;
+  base_sha: string | null;
+  instructions: string | null;
   started_at: string;
   finished_at: string | null;
 }
@@ -221,12 +252,17 @@ export interface ReviewRunRow {
 export interface ReviewRunDto {
   id: string;
   reviewId: string;
-  status: "running" | "reported" | "failed";
+  status: "running" | "reported" | "failed" | "cancelled";
   model: string | null;
   effort: string | null;
   maxTurns: number | null;
   /** claude --effort level; null on runs from before effort replaced the turn cap. */
   effortLevel: string | null;
+  /** full: read the whole change; followup: only the commits after baseSha, judging earlier findings. */
+  mode: "full" | "followup";
+  headSha: string | null;
+  baseSha: string | null;
+  instructions: string | null;
   /** Files in the change, and how many of them the agent was sent; null on older runs. */
   diffFiles: number | null;
   sentFiles: number | null;
@@ -284,4 +320,91 @@ export interface CompareSummaryDto {
   behindBy: number;
   commits: { sha: string; message: string; author: string }[];
   files: { path: string; additions: number; deletions: number }[];
+}
+
+/** What a Desk notification is about: a review's outcome, a GitHub event the poller saw, or an automatic review. */
+export type DeskNotificationKind =
+  | "review-reported"
+  | "review-failed"
+  | "review-requested"
+  | "new-commits"
+  | "comment-reply"
+  | "auto-review-started"
+  | "auto-review-skipped";
+
+/** One entry of the notification history, also pushed live to every open tab. */
+export interface DeskNotification {
+  id: number;
+  kind: DeskNotificationKind;
+  title: string;
+  body: string;
+  /** Same tag in every tab: the system keeps one notification instead of stacking copies. */
+  tag: string;
+  /** Where on GitHub it happened, when it happened there (a reply opens on GitHub). */
+  url: string | null;
+  /** The Desk screen a click opens. */
+  target: ReviewTarget | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+/** The single notification stream: a new notification, or the unread count after someone opened the list. */
+export type NotificationStreamEvent =
+  | { type: "notification"; notification: DeskNotification; unread: number }
+  | { type: "read"; unread: number };
+
+export interface NotificationListDto {
+  items: DeskNotification[];
+  unread: number;
+}
+
+/** Polling and automatic review, kept in the settings table. */
+export interface WatchSettings {
+  /** Seconds between two GitHub polls. */
+  pollSeconds: number;
+  /** Repositories where a review request or a push on a reviewed PR starts a review by itself. Empty by default. */
+  autoReviewRepos: string[];
+  /** General switch: while true no automatic review starts, and autoReviewRepos is kept as is. */
+  autoReviewPaused: boolean;
+  /** PRs (owner/name#number) never reviewed automatically, whatever is pushed, until removed from the list. */
+  autoReviewMutedPrs: string[];
+  /** No automatic review once today's runs (UTC) cost this much, in USD. */
+  dailyCapUsd: number;
+  autoReviewModel: string | null;
+  autoReviewEffort: string | null;
+}
+
+/** What the reviewer did with a set of findings. `resolved` = fixed by a later commit. */
+export interface FindingOutcomeCounts {
+  total: number;
+  open: number;
+  posted: number;
+  dismissed: number;
+  resolved: number;
+}
+
+/** Jev's verdict on a set of findings, against what the reviewer did with them. */
+export interface JevVerdictRow extends FindingOutcomeCounts {
+  verdict: "nit" | "not-nit" | "nit-uncertain" | "fails" | "holds" | "holds-uncertain" | "unjudged";
+}
+
+export interface FindingQualitySummaryDto {
+  totals: FindingOutcomeCounts;
+  bySeverity: (FindingOutcomeCounts & { severity: string })[];
+  byModel: (FindingOutcomeCounts & { model: string; effort: string })[];
+  byRepo: (FindingOutcomeCounts & { repo: string })[];
+  jev: {
+    enabled: boolean;
+    judged: number;
+    /** A Noul at or above `yes` reads as yes, at or below `no` as no; between, uncertain. */
+    thresholds: { yes: number; no: number };
+    verdicts: JevVerdictRow[];
+    /** Jev's mean probabilities for each reviewer decision, to tune the thresholds on. */
+    byDecision: { state: string; judged: number; meanNit: number; meanHolds: number; meanSeverity: number }[];
+  };
+}
+
+export interface WatchSettingsDto extends WatchSettings {
+  /** What today's finished review runs (UTC) cost, against dailyCapUsd. */
+  spentTodayUsd: number;
 }

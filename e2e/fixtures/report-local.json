@@ -1,0 +1,20 @@
+{
+  "summary": "divide() returns Infinity for a zero divisor instead of failing.",
+  "findings": [
+    {
+      "file": "src/math.ts",
+      "startLine": 6,
+      "endLine": 6,
+      "side": "RIGHT",
+      "severity": "medium",
+      "category": "correctness",
+      "title": "Dividing by zero returns Infinity",
+      "summary": "divide(1, 0) returns Infinity silently.",
+      "background": "Callers display the result as an amount.",
+      "problem": "Infinity propagates into totals.",
+      "suggestedFix": "Throw a RangeError when the divisor is zero.",
+      "suggestedComment": "divide(1, 0) returns Infinity: throw a RangeError for a zero divisor.",
+      "references": []
+    }
+  ]
+}

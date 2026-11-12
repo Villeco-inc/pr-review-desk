@@ -67,7 +67,7 @@ export default function MultiSelect({
                   key={o.value}
                   type="button"
                   onClick={() => toggle(o.value)}
-                  className="flex h-9 w-full items-center gap-2 edge-soft-b px-2.5 text-left text-[13px] last:border-b-0 hover:bg-acid hover:text-acid-fg"
+                  className="flex h-9 w-full items-center gap-2 edge-soft-b px-2.5 text-left text-[length:calc(13px*var(--font-scale))] last:border-b-0 hover:bg-acid hover:text-acid-fg"
                 >
                   <Checkbox checked={checked} onChange={() => toggle(o.value)} ariaLabel={o.label} />
                   <span className="min-w-0 flex-1 truncate">{o.label}</span>

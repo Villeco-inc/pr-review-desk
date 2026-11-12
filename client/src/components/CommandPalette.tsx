@@ -266,7 +266,7 @@ export default function CommandPalette({ open, onClose, onJump }: { open: boolea
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Jump to a pull request, branch or finding…"
-            className="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-fg-3"
+            className="min-w-0 flex-1 bg-transparent text-[length:calc(15px*var(--font-scale))] outline-none placeholder:text-fg-3"
             role="combobox"
             aria-expanded="true"
             aria-controls="jump-results"
@@ -305,8 +305,8 @@ export default function CommandPalette({ open, onClose, onJump }: { open: boolea
                   >
                     <Icon name={item.icon} className="size-4 shrink-0 text-fg-3" />
                     <div className="flex min-w-0 flex-1 flex-col">
-                      <span className={`truncate font-medium ${item.group === "Local branches" ? "font-mono text-[13px]" : ""}`}>{item.title}</span>
-                      <span className={`truncate font-mono text-[11px] ${on ? "text-fg-2" : "text-fg-3"}`}>{item.meta}</span>
+                      <span className={`truncate font-medium ${item.group === "Local branches" ? "font-mono text-[length:calc(13px*var(--font-scale))]" : ""}`}>{item.title}</span>
+                      <span className={`truncate font-mono text-[length:calc(11px*var(--font-scale))] ${on ? "text-fg-2" : "text-fg-3"}`}>{item.meta}</span>
                     </div>
                     {item.badge && ("status" in item.badge ? <StatusBadge status={item.badge.status} /> : <SeverityBadge severity={item.badge.severity} />)}
                   </div>

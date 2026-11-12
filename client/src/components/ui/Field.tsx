@@ -3,7 +3,7 @@ import Icon, { type IconName } from "./Icon";
 
 // Focus is a 3px outline outside the ink border, never a replacement for it.
 export const SHELL =
-  "group inline-flex h-[var(--ctl-h)] items-center gap-2 edge bg-surface px-2.5 text-[13px] text-fg lift-sm focus-within:outline-3 focus-within:outline-offset-3 focus-within:outline-primary has-disabled:bg-subtle has-disabled:border-fg-3 has-disabled:text-fg-3 has-disabled:shadow-none";
+  "group inline-flex h-[var(--ctl-h)] items-center gap-2 edge bg-surface px-2.5 text-[length:calc(13px*var(--font-scale))] text-fg lift-sm focus-within:outline-3 focus-within:outline-offset-3 focus-within:outline-primary has-disabled:bg-subtle has-disabled:border-fg-3 has-disabled:text-fg-3 has-disabled:shadow-none";
 
 interface ShellProps {
   icon?: IconName;
@@ -62,7 +62,7 @@ export function Input({ icon, label, wrapperClassName, error, id, className = ""
 export function Textarea({ className = "", ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`block w-full resize-y edge bg-surface px-2.5 py-2 font-mono text-xs leading-[19px] text-fg-2 lift-sm focus-ring disabled:cursor-not-allowed disabled:border-fg-3 disabled:bg-subtle disabled:text-fg-3 disabled:shadow-none ${className}`}
+      className={`block w-full resize-y edge bg-surface px-2.5 py-2 font-mono text-xs leading-[calc(19px*var(--font-scale))] text-fg-2 lift-sm focus-ring disabled:cursor-not-allowed disabled:border-fg-3 disabled:bg-subtle disabled:text-fg-3 disabled:shadow-none ${className}`}
       {...rest}
     />
   );
@@ -95,7 +95,7 @@ export function Segmented<T extends string>({ value, onChange, options, disabled
             aria-checked={on}
             disabled={disabled}
             onClick={() => onChange(o.value)}
-            className={`${block ? "min-w-0 flex-auto px-2 tracking-[.06em]" : "px-3"} h-[calc(var(--ctl-h)-4px)] edge-l label-caps text-[11px] focus-ring first:border-l-0 disabled:cursor-not-allowed disabled:border-fg-3 disabled:text-fg-3 ${
+            className={`${block ? "min-w-0 flex-auto px-2 tracking-[.06em]" : "px-3"} h-[calc(var(--ctl-h)-4px)] edge-l label-caps text-[length:calc(11px*var(--font-scale))] focus-ring first:border-l-0 disabled:cursor-not-allowed disabled:border-fg-3 disabled:text-fg-3 ${
               on ? "bg-seg-on-bg text-seg-on-fg disabled:bg-subtle-2" : "text-fg-2 hover:bg-subtle hover:text-fg"
             }`}
           >

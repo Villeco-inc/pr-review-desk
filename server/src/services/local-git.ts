@@ -211,6 +211,15 @@ export async function getLocalDiff(repoPath: string, branch: string, base: strin
   };
 }
 
+export async function hasCommit(repoPath: string, sha: string): Promise<boolean> {
+  return refExists(repoPath, sha);
+}
+
+/** What `sha` changes since it left `base`, pinned to those two commits whatever the branch has become since. */
+export async function getCommitRangeDiff(repoPath: string, base: string, sha: string): Promise<string> {
+  return git(repoPath, ["diff", `${base}...${sha}`]);
+}
+
 export async function getLatestCommitMessage(repoPath: string, branch: string): Promise<{ subject: string; body: string }> {
   const stdout = await git(repoPath, ["log", "-1", "--pretty=%s%x00%b", branch]);
   const [subject = "", body = ""] = stdout.split("\x00");

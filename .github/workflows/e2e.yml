@@ -1,0 +1,66 @@
+name: e2e
+
+# The end-to-end flows of the Desk, replayed from the committed cache (.e2e/cache/).
+# In CI the cache is read-only, and --strict-cache fails a step whose recording no longer
+# replays instead of asking the model: the job makes no model call and needs no secret.
+# A failure with REPLAY_STALE means the UI changed: re-record locally (`npm run test:e2e`)
+# and commit the changed files under .e2e/cache/.
+# The app runs against fake gh and claude (e2e/harness/bin): no GitHub token, no Claude token.
+
+# Paused: no automatic runs for now; it still runs by hand from the Actions tab.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          cache: npm
+      - run: npm ci
+
+      - name: Install the browser
+        run: npx e2e-web install chromium --with-deps
+
+      - name: Build the app
+        run: npm run build
+
+      - name: Run e2e
+        run: npx e2e run --strict-cache --reporter list,junit
+
+      # Even after a failed run: the summary shows what the run cost, and a single model call
+      # fails the job (everything must replay from the cache), on top of --strict-cache.
+      - name: Cost of the run
+        if: ${{ !cancelled() }}
+        run: node e2e/harness/cost.mjs --max-calls 0 --summary-md "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-report
+          path: |
+            .e2e/report.json
+            .e2e/junit.xml
+            .e2e/logs/app.log
+          if-no-files-found: warn
+
+      - name: Upload artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-artifacts
+          path: .e2e/results
+          if-no-files-found: warn
+          retention-days: 7

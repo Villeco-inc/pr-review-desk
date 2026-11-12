@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-16T02:06:50.485Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap button \"Start review\"",
+        "target": {
+          "role": "button",
+          "name": "Start review"
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "e2e/tests/local-review.e2e.ts::review%20a%20local%20branch",
+      "targetId": "desk",
+      "instructionDigest": "7f640c2f2a4f918cb7fdd04f4e1069a15fb71eed12f12fae17c53ae2ced63146",
+      "paramsDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "I pressed Start review and the review started. The button changed to \"Review running…\" and was disabled, and a \"Review started for feat/divide\" notification appeared. The review history now lists 1 review, feat/divide → main, with status Running.",
+    "startPath": "/local/sample-app?branch=feat%2Fdivide&base=main",
+    "endPath": "/local/sample-app?branch=feat%2Fdivide&base=main",
+    "endAnchors": [
+      {
+        "role": "status",
+        "name": "Review started for feat/divide Dismiss notification"
+      },
+      {
+        "role": "button",
+        "name": "Review running…"
+      },
+      {
+        "text": "Running"
+      },
+      {
+        "text": "Last review"
+      },
+      {
+        "text": "just now"
+      },
+      {
+        "role": "button",
+        "name": "View"
+      },
+      {
+        "role": "button",
+        "name": "Refresh status"
+      },
+      {
+        "text": "1 review"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "role": "button",
+        "name": "Start review"
+      },
+      {
+        "text": "0 reviews"
+      },
+      {
+        "text": "No reviews yet"
+      },
+      {
+        "text": "Start a review on a branch above to see it here."
+      }
+    ],
+    "endWaitMs": 12731,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "9416869dbfde4e1078fb97f5543d8c9cdf165c68367f33eda8b780e2694a0345",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "15d027aed4d9125597767007fca15a208ad6017f8f64786f5ec7e297500d20f3",
+      "agentContextDigest": "ebd2b5099b9bf8a508622f2dcaa44c80115bb1c5fc130baa497d028e71b5f3ff"
+    }
+  }
+}

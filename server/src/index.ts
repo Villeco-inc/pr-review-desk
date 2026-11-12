@@ -10,16 +10,25 @@ import { localRouter } from "./routes/local";
 import { viewMemoryRouter } from "./routes/view-memory";
 import { compareRouter } from "./routes/compare";
 import { telemetryRouter } from "./routes/telemetry";
+import { notificationsRouter } from "./routes/notifications";
 import { track } from "./db/telemetry";
 import { localOnly } from "./services/local-only";
 import { isTrackedRequest } from "./services/tracked-requests";
 import { failInterruptedRuns } from "./services/run-log";
 import { configuredLocalRepos } from "./services/local-git";
+import { notify, startReviewOutcomeNotifications, watchEventNotification } from "./services/notifications";
+import { githubEvents, startGithubPoller } from "./services/github-poller";
+import type { WatchEvent } from "./services/github-watch";
+import { reviewOutcomes } from "./services/review-engine";
+import { jevClientFromEnv, judgeFindingsOnOutcome } from "./services/jev";
+import { handleAutoReview } from "./services/auto-review";
+import { deadpoolReviewsDir, startDeadpoolImport } from "./services/deadpool-reviews";
 
 const db = getDb();
 const stuck = db.prepare("UPDATE reviews SET status = 'failed', error = 'Server restarted during review' WHERE status IN ('running', 'queued')").run();
 if (stuck.changes > 0) console.log(`[startup] reset ${stuck.changes} stuck review(s) to failed`);
 failInterruptedRuns();
+if (judgeFindingsOnOutcome(reviewOutcomes, getDb, jevClientFromEnv())) console.log("[startup] Jev judges new findings (TYPESAFE_API_KEY is set)");
 
 const app = express();
 const port = Number(process.env.PORT ?? 3100);
@@ -56,6 +65,13 @@ app.use("/api", localRouter);
 app.use("/api", viewMemoryRouter);
 app.use("/api", compareRouter);
 app.use("/api", telemetryRouter);
+app.use("/api", notificationsRouter);
+
+startReviewOutcomeNotifications();
+githubEvents.on("event", (event: WatchEvent) => {
+  notify(watchEventNotification(event));
+  void handleAutoReview(event);
+});
 
 if (process.env.NODE_ENV === "production") {
   const distDir = path.join(process.cwd(), "dist");
@@ -74,4 +90,9 @@ app.listen(port, () => {
   const { ignored } = parseRepoList(process.env.REPOS);
   if (ignored.length > 0) console.warn(`ignored in REPOS, not owner/name: ${ignored.join(", ")}`);
   startPrRefresh();
+  startGithubPoller();
+  if (fs.existsSync(deadpoolReviewsDir())) {
+    console.log(`deadpool verdicts: ${deadpoolReviewsDir()}`);
+    startDeadpoolImport(getDb, configuredLocalRepos);
+  }
 });

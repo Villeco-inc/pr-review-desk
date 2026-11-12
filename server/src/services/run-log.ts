@@ -107,7 +107,7 @@ export function recordStats(runId: string, stats: RunStats) {
     .run(...set.map(([, v]) => v), runId);
 }
 
-export function finishRun(runId: string, status: "reported" | "failed", error?: string) {
+export function finishRun(runId: string, status: "reported" | "failed" | "cancelled", error?: string) {
   getDb()
     .prepare("UPDATE review_runs SET status = ?, error = ?, finished_at = ? WHERE id = ?")
     .run(status, error ?? null, new Date().toISOString(), runId);
@@ -129,6 +129,10 @@ function toRunDto(row: ReviewRunRow): ReviewRunDto {
     effort: row.effort,
     maxTurns: row.max_turns,
     effortLevel: row.effort_level,
+    mode: row.mode === "followup" ? "followup" : "full",
+    headSha: row.head_sha ?? null,
+    baseSha: row.base_sha ?? null,
+    instructions: row.instructions ?? null,
     diffFiles: row.diff_files,
     sentFiles: row.sent_files,
     omittedFiles: JSON.parse(row.omitted_files || "[]"),

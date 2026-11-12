@@ -1,0 +1,35 @@
+{
+  "summary": "The retry loop retries every error, including declined cards, and can charge a customer twice.",
+  "findings": [
+    {
+      "file": "src/payments/client.ts",
+      "startLine": 14,
+      "endLine": 15,
+      "side": "RIGHT",
+      "severity": "high",
+      "category": "correctness",
+      "title": "Retrying a charge can bill the customer twice",
+      "summary": "A POST to /charges is retried after any error, even when the first one reached the provider.",
+      "background": "Charges are not idempotent unless an idempotency key is sent.",
+      "problem": "A timeout after the provider accepted the charge triggers a second charge.",
+      "suggestedFix": "Send an idempotency key with the charge, and retry only on network errors.",
+      "suggestedComment": "Retrying this POST can charge the customer twice: send an idempotency key, or retry only on network errors.",
+      "references": []
+    },
+    {
+      "file": "src/payments/client.ts",
+      "startLine": 18,
+      "endLine": 18,
+      "side": "RIGHT",
+      "severity": "nit",
+      "category": "readability",
+      "title": "Name the retry limit",
+      "summary": "The literal 3 is the retry limit.",
+      "background": "A named constant documents the intent.",
+      "problem": "The magic number hides the policy.",
+      "suggestedFix": "Extract MAX_CHARGE_ATTEMPTS.",
+      "suggestedComment": "Nit: extract the 3 into a MAX_CHARGE_ATTEMPTS constant.",
+      "references": []
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
 import { getTelemetryDb, track } from "../db/telemetry";
+import { findingOutcomeRows, summarizeFindingOutcomes } from "../services/finding-outcomes";
 
 export const telemetryRouter = Router();
 
@@ -78,5 +79,6 @@ telemetryRouter.get("/telemetry/summary", (req, res) => {
        FROM events WHERE ts >= ? GROUP BY kind ORDER BY count DESC`
     )
     .all(since);
-  res.json({ days, since, totals, byDay, byRepo, byModel, events });
+  const findings = summarizeFindingOutcomes(findingOutcomeRows(db, since), Boolean(process.env.TYPESAFE_API_KEY?.trim()));
+  res.json({ days, since, totals, byDay, byRepo, byModel, events, findings });
 });

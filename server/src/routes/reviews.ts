@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { getDb } from "../db/schema";
-import { reviewEvents, reviewOutcomes, reviewId, startReview, getThreadLog, reimportRun } from "../services/review-engine";
+import { reviewEvents, reviewOutcomes, reviewId, startReview, getThreadLog, reimportRun, cleanInstructions, cancelReview } from "../services/review-engine";
 import { splitUnifiedDiff, findPatchForFile } from "../services/diff-utils";
+import { approvalWarnings, failingChecks } from "../services/approval";
 import { toFindingDto, toReviewDto } from "../services/dto";
 import { getRunSession, listRuns } from "../services/run-log";
 import { isRepoName } from "../services/repo-selection";
@@ -30,13 +31,14 @@ function loadFindings(id: string): FindingRow[] {
 }
 
 reviewsRouter.post("/reviews", async (req, res) => {
-  const { repo, number, skills, model, effort, challengeExisting } = req.body as {
+  const { repo, number, skills, model, effort, challengeExisting, instructions } = req.body as {
     repo?: string;
     number?: number;
     skills?: string[];
     model?: string;
     effort?: string;
     challengeExisting?: boolean;
+    instructions?: string;
   };
   rlog(`POST /reviews body=${JSON.stringify({ repo, number, skills, model, effort, challengeExisting })}`);
 
@@ -59,7 +61,8 @@ reviewsRouter.post("/reviews", async (req, res) => {
       Array.isArray(skills) ? skills : [],
       model || undefined,
       effort || undefined,
-      challengeExisting !== false
+      challengeExisting !== false,
+      cleanInstructions(instructions)
     );
     rlog(`review started: id=${id}`);
     res.status(202).json({ id });
@@ -85,7 +88,10 @@ reviewsRouter.get("/reviews/latest", (req, res) => {
   }
 
   const patches = splitUnifiedDiff(review.diff);
-  const findings = loadFindings(id).map((row) => toFindingDto(row, patches));
+  const holds = new Map(
+    (getDb().prepare("SELECT finding_id, holds FROM finding_judgments WHERE review_id = ?").all(id) as { finding_id: string; holds: number | null }[]).map((j) => [j.finding_id, j.holds])
+  );
+  const findings = loadFindings(id).map((row) => ({ ...toFindingDto(row, patches), jevHolds: holds.get(row.id) ?? null }));
   res.json({ ...toReviewDto(review), findings });
 });
 
@@ -137,6 +143,28 @@ reviewsRouter.get("/reviews/:owner/:name/:number/events", (req, res) => {
   req.on("close", () => {
     reviewEvents.off(id, listener);
   });
+});
+
+reviewsRouter.post("/reviews/:owner/:name/:number/cancel", (req, res) => {
+  const id = reviewId(`${req.params.owner}/${req.params.name}`, Number(req.params.number));
+  rlog(`POST cancel ${id}`);
+  if (!cancelReview(id)) {
+    res.status(409).json({ error: "no review of this target is running" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+reviewsRouter.get("/reviews/:owner/:name/:number/approval-check", async (req, res) => {
+  const { fetchCheckRollup } = await import("../services/github");
+  const repo = `${req.params.owner}/${req.params.name}`;
+  const num = Number(req.params.number);
+  try {
+    const checks = failingChecks(await fetchCheckRollup(repo, num));
+    res.json({ warnings: approvalWarnings(loadFindings(reviewId(repo, num)), checks) });
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 reviewsRouter.post("/reviews/:owner/:name/:number/submit", async (req, res) => {

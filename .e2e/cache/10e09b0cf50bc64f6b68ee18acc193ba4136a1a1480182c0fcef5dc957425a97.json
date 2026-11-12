@@ -1,0 +1,119 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-16T02:07:08.860Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "check",
+        "summary": "check checkbox \"acme/widgets\" in \"acme/archive\"",
+        "target": {
+          "role": "checkbox",
+          "name": "acme/widgets",
+          "within": "acme/archive"
+        },
+        "checked": true
+      },
+      {
+        "name": "tap",
+        "summary": "tap button \"Save\" in \"Pick your repositories\"",
+        "target": {
+          "role": "button",
+          "name": "Save",
+          "within": "Pick your repositories"
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "e2e/tests/repo-picker.e2e.ts::first%20launch%3A%20pick%20the%20repositories%2C%20then%20see%20their%20pull%20requests",
+      "targetId": "desk",
+      "instructionDigest": "c16799f6863f97cedf0093b5a771513216b0eabd56365ae543d8dbba99c70835",
+      "paramsDigest": "178e6b80ac167f7e99aed602e392be4cd3e597651052c9eecfc33163d73adf55",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "Ticked acme/widgets and saved it, and the step passed. The dialog closed and a \"Following 1 repository\" notice appeared. The Pull requests list now filters to acme/widgets and shows 2 open pull requests: #43 and #42.",
+    "startPath": "/prs",
+    "endPath": "/prs?repo=acme%2Fwidgets",
+    "endAnchors": [
+      {
+        "role": "status",
+        "name": "Following 1 repository Dismiss notification"
+      },
+      {
+        "text": "acme"
+      },
+      {
+        "text": "2 open · refreshed just now"
+      },
+      {
+        "role": "option",
+        "name": "All repos (acme)"
+      },
+      {
+        "role": "option",
+        "name": "acme/widgets",
+        "states": [
+          "selected"
+        ]
+      },
+      {
+        "role": "button",
+        "name": "#"
+      },
+      {
+        "role": "columnheader",
+        "name": "Title"
+      },
+      {
+        "role": "columnheader",
+        "name": "Author"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "text": "0 open"
+      },
+      {
+        "role": "combobox",
+        "name": "Repository"
+      },
+      {
+        "text": "No open pull requests"
+      },
+      {
+        "text": "has nothing waiting for review. Pick another repository or refresh."
+      },
+      {
+        "role": "heading",
+        "name": "Pick your repositories"
+      },
+      {
+        "text": "Pull requests are listed from the repositories you tick. You can change them later from Repositories in the rail."
+      },
+      {
+        "role": "textbox",
+        "name": "Filter repositories",
+        "placeholder": "Filter by name…"
+      },
+      {
+        "role": "checkbox",
+        "name": "acme/archive"
+      }
+    ],
+    "endWaitMs": 12988,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "9416869dbfde4e1078fb97f5543d8c9cdf165c68367f33eda8b780e2694a0345",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "15d027aed4d9125597767007fca15a208ad6017f8f64786f5ec7e297500d20f3",
+      "agentContextDigest": "ebd2b5099b9bf8a508622f2dcaa44c80115bb1c5fc130baa497d028e71b5f3ff"
+    }
+  }
+}

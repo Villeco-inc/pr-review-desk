@@ -67,8 +67,11 @@ The review compares **commits**: `base...branch` in that checkout. Work that is 
 | `REPOS_ROOT` | no | `~/Documents` | Folder with your local checkouts |
 | `SCAN_DIR` | no | none | Folder of checkouts, relative to `REPOS_ROOT`, scanned for repos |
 | `LOCAL_REPOS` | no | none | Extra local checkouts, `label=relative/path,…` |
+| `DEADPOOL_REVIEWS_DIR` | no | `~/.cerebro/revues` | Deadpool's verdict files; their findings show up on the local review of each branch |
 | `HOST_PORT` | no | `37703` | Port the app is served on |
 | `PORT` | no | `3100` | Port of the server in dev mode |
+| `TYPESAFE_API_KEY` | no | none | Turns on Jev: each new finding is judged (nit, severity, does it hold) and Activity compares the answers with what you posted or dismissed. **The text of every finding is sent to TypeSafe** |
+| `JEV_MODEL` | no | `jev-1.13.0` | Jev model; pinned so stored probabilities stay comparable |
 
 ## Using it
 
@@ -76,6 +79,7 @@ The review compares **commits**: `base...branch` in that checkout. Work that is 
 - **Always fresh**: while the app is open, the server asks GitHub for your repositories' pull requests every 90 seconds, and once at startup. The line under the title says how long ago that was, and says so when the last refresh failed. **Refresh** asks GitHub right away. After 10 minutes without a visit it slows down to one refresh every 30 minutes, and a page opened or come back to after a while refreshes at once.
 - **Findings**: each one shows the background, the problem and a suggested fix, next to the diff. Edit the suggested comment, then post it inline or as a PR comment, or dismiss it.
 - **Local branches**: pick a checkout, a branch and a base, then review. You get a **Copy fix prompt** to hand the findings to your coding agent.
+- **Deadpool**: when the folder `DEADPOOL_REVIEWS_DIR` exists, every verdict file Deadpool writes there (`<ticket>/<date>-<dev>-tour<n>-<verdict>.md`) is read every 30 seconds. Its findings join the local review of the reviewed branch, in the repo whose history holds the reviewed commit, marked **Deadpool**, and you treat them like any other finding. A later round marks the open findings of the earlier ones resolved, since Deadpool lists again every finding that still holds. The files are only read; a verdict whose commit is in none of your local repos is left out, and the server log says so.
 - **Sessions**: the **Session** button on a review shows the latest run of the agent: model, turns, duration, tokens, cost, the full prompt and every event it streamed. Earlier runs are one click away.
 - **Every screen has its own URL**. Refresh, Back and Forward work, and each list remembers your last repository and that repository's filters.
 - **Look**: switch between two design systems (Brutal, Blueprint), in light or dark, at the bottom of the left rail.
@@ -139,7 +143,7 @@ Logs: `docker compose logs -f app`.
 
 ## Developing
 
-Needs Node 22.9 or later (`.nvmrc`), plus `gh` and `claude` installed on your machine, since the server calls them directly.
+Needs Node 22.22.3 or later, plus `gh` and `claude` installed on your machine, since the server calls them directly. The end-to-end tests need Node 24 (`.nvmrc`: `nvm use`). After switching Node versions, run `npm rebuild better-sqlite3`: its native module is built for one version.
 
 ```bash
 npm install
@@ -148,6 +152,24 @@ npm test
 ```
 
 In dev mode the server calls your own `gh` and `claude`, so their logins are used; it reads `.env` (if any) for the optional settings and uses your checkouts in place, from `REPOS_ROOT`. It uses the same `./data` folder as the container, so stop one before starting the other.
+
+### End-to-end tests
+
+The user flows run in a browser with [e2e](https://e2e.tester.army/docs/quickstart.md), against a closed world: fake `gh` and `claude` (`e2e/harness/bin/`) answer from `e2e/fixtures/`, so no test reaches GitHub or a model through the app, and nothing is ever posted. The GitHub poller gets its answers from the same fake `gh`, and the server starts without `TYPESAFE_API_KEY`, so Jev stays off. Each run starts the production build on port 3203 with a fresh database in a temporary folder, deleted at the end.
+
+```bash
+npm run test:e2e        # builds, then runs every flow (Node 24)
+npx e2e run e2e/tests/findings.e2e.ts --headed   # one file, in a visible browser
+```
+
+- **Agent steps.** `agent.act` moves through the app (Anthropic, token from `ant auth print-credentials --profile e2e`; another profile with `E2E_ANT_PROFILE`). Every step is replayed from `.e2e/cache/`, which is committed: a run that changes nothing makes no model call.
+- **Add a flow.** Write it as a function in `e2e/flows.ts` and register it in a file under `e2e/tests/`. Start with `resetWorld()`, follow each `agent.act` with an `expect` on the screen (that is what lets the cache record it), and check everything in code: `expect` on the screen, the database and the fake CLIs' journals through `e2e/harness/world-state.ts` (`ghWrites()` is what would have reached GitHub). Never `agent.assert`: it calls the model on every run. Match texts with `/…/i`, since two design systems print them in capitals. New PRs, diffs or review reports go in `e2e/fixtures/`.
+- **Refresh the cache.** After a UI change, run `npm run test:e2e`: steps that no longer replay are done again by the agent and recorded. Commit what changed under `.e2e/cache/`. `npx e2e cache ls` lists the entries, `npx e2e cache clear` starts over.
+- **When it fails.** Each failed test has a trace page under `.e2e/results/`, the server log is in `.e2e/logs/app.log`, and `E2E_KEEP_WORLD=1` keeps the world folder (database, journals) after the run.
+- **Cost.** After each `npm run test:e2e`, a line gives the run's model calls and their estimated cost (`9 tests · 0 appel · 0,000 $`), with the steps that called the model, and is added to `.e2e/cost-history.jsonl`. `npm run e2e:cost` computes it again on the last report (`-- --report <file>` for another one).
+- **Ceiling.** `E2E_MAX_USD` (default 1.00) makes the run fail when its estimated cost goes over it. Prices are fixed at the top of `e2e/harness/cost.mjs`: a model missing there fails the calculation rather than counting as free.
+- **Billed cost.** The figure is an estimate from the tokens reported. The amount actually billed is in the Anthropic console, under the `e2e` workspace (the one of the `ant` profile).
+- **CI.** `.github/workflows/e2e.yml` replays the cache with `--strict-cache`: no model call and no secret. The job summary shows the cost, and one model call fails the job. A stale step fails with `REPLAY_STALE`; refresh the cache locally.
 
 ### How it is built
 

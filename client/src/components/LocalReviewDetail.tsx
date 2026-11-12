@@ -6,7 +6,8 @@ import { ReimportButton, ScopeNote, SessionButton } from "./RunSession";
 import { useSSE } from "../hooks/useSSE";
 import type { FindingDto, ReviewDto } from "../../../shared/types";
 import SeverityBadge from "./SeverityBadge";
-import StatusBadge, { FindingStateBadge } from "./StatusBadge";
+import StatusBadge, { FindingStateBadge, FollowupBadge } from "./StatusBadge";
+import CancelReviewButton from "./CancelReviewButton";
 import Button from "./ui/Button";
 import Card, { Band, Chip } from "./ui/Card";
 import Icon from "./ui/Icon";
@@ -126,6 +127,7 @@ export default function LocalReviewDetail({
     <main className="flex flex-col gap-4 px-10 pb-10 pt-5">
       <ShellActions>
         {review && <StatusBadge status={review.status} />}
+        {isRunning && <CancelReviewButton repo={repo} number={number} onDone={refetchReview} />}
         <Button size="sm" onClick={onBack} aria-keyshortcuts="Escape" title={`${backLabel} (Esc)`}>
           <Icon name="arrowLeft" />
           {backLabel}
@@ -136,7 +138,7 @@ export default function LocalReviewDetail({
         <div className="flex items-start gap-4 px-5 pb-4 pt-[18px]">
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             {review ? (
-              <h1 className="text-xl font-bold leading-[28px] tracking-[-0.015em]">{review.title}</h1>
+              <h1 className="text-xl font-bold leading-[calc(28px*var(--font-scale))] tracking-[-0.015em]">{review.title}</h1>
             ) : (
               <Skeleton className="h-5 w-[480px]" />
             )}
@@ -178,7 +180,7 @@ export default function LocalReviewDetail({
               Review failed
             </Band>
             <div className="mx-5 mb-4 mt-3.5 flex items-start gap-3.5">
-              <pre className="max-w-[900px] flex-1 whitespace-pre-wrap edge bg-surface px-2.5 py-2 font-mono text-xs leading-[18px] text-danger-ink">{review.error}</pre>
+              <pre className="max-w-[900px] flex-1 whitespace-pre-wrap edge bg-surface px-2.5 py-2 font-mono text-xs leading-[calc(18px*var(--font-scale))] text-danger-ink">{review.error}</pre>
               <ReimportButton repo={repo} number={number} error={review.error} onDone={refetchReview} />
             </div>
           </div>
@@ -201,7 +203,7 @@ export default function LocalReviewDetail({
         <div className="flex items-center gap-4 edge bg-acid px-5 py-3.5 text-acid-fg lift">
           <Icon name="terminal" className="size-5 shrink-0" />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="font-display text-[20px] uppercase leading-none">Hand it to your agent</span>
+            <span className="font-display text-[length:calc(20px*var(--font-scale))] uppercase leading-none">Hand it to your agent</span>
             <span>
               One prompt covering the {openFindings.length} open finding{openFindings.length > 1 ? "s" : ""} on <span className="font-mono">{branch}</span>.
             </span>
@@ -246,7 +248,7 @@ export default function LocalReviewDetail({
       {review && (
         <Card className="overflow-hidden">
           <div className="flex h-12 items-center gap-3 edge-b pl-5 pr-4">
-            <span className="font-display text-[20px] uppercase leading-none">Findings</span>
+            <span className="font-display text-[length:calc(20px*var(--font-scale))] uppercase leading-none">Findings</span>
             <span className="font-mono text-xs text-fg-3">{sortedFindings.length}</span>
             {sortedFindings.length > 0 && (
               <span className="ml-1 inline-flex gap-2">
@@ -271,11 +273,13 @@ export default function LocalReviewDetail({
                 onClick={() => onSelectFinding(finding.id)}
                 className="group flex h-13 w-full items-center gap-3 edge-soft-b pl-5 pr-4 text-left outline-none last:border-b-0 hover:bg-row-hover focus-visible:bg-row-hover focus-visible:shadow-[inset_5px_0_0_var(--color-primary)]"
               >
-                <SeverityBadge severity={finding.severity} className="w-[84px] justify-center" />
+                <SeverityBadge severity={finding.severity} className="w-[calc(84px*var(--font-scale))] justify-center" />
                 <span className="w-[300px] shrink-0 truncate font-mono text-xs text-fg-3" title={finding.file}>
                   {finding.file}:{finding.startLine ?? "?"}
                 </span>
-                <span className={`min-w-0 flex-1 truncate font-medium ${finding.state === "dismissed" ? "text-fg-3" : ""}`}>{finding.title}</span>
+                <span className={`min-w-0 flex-1 truncate font-medium ${finding.state === "dismissed" || finding.state === "resolved" ? "text-fg-3" : ""}`}>{finding.title}</span>
+                {finding.source === "deadpool" && <span className="shrink-0 label-caps text-fg-3">Deadpool</span>}
+                <FollowupBadge status={finding.followupStatus} state={finding.state} />
                 <FindingStateBadge state={finding.state} />
                 <Icon name="chevronRight" className="size-4 text-fg-3 group-hover:text-fg" />
               </button>

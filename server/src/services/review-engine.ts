@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
@@ -6,20 +6,22 @@ import { getDb } from "../db/schema";
 import {
   fetchPrDiff,
   fetchPrSnapshot,
-  fetchExistingReviews,
+  fetchPrDiscussion,
   fetchCompare,
   fetchCompareDiff,
+  fetchRepoFile,
   type PrSnapshot,
-  type ExistingReview,
-  type ExistingReviewComment,
 } from "./github";
+import { assembleGuidance, collectRepoGuidance, MAX_GUIDANCE_CHARS } from "./repo-guidance";
 import { closesString, parseReport } from "./findings-parser";
 import { scopeDiff, type DiffScope } from "./diff-scope";
 import { track } from "../db/telemetry";
 import { splitUnifiedDiff } from "./diff-utils";
 import { getLocalDiff, getLatestCommitMessage, localRepoIdentity } from "./local-git";
 import { appendStderr, appendStreamLine, createRun, finishRun, getRunSession, recordStats, statsFromEvent } from "./run-log";
-import type { Finding, Report, ReviewEvent, ReviewOutcome, ReviewTarget } from "../../../shared/types";
+import type { FindingRow, ReviewEvent, ReviewOutcome, ReviewTarget } from "../../../shared/types";
+import { saveRunFindings, type RunMode } from "./finding-store";
+import { formatDiscussion, type PrDiscussion } from "./discussion";
 
 export const reviewEvents = new EventEmitter();
 reviewEvents.setMaxListeners(0);
@@ -29,6 +31,25 @@ export const reviewOutcomes = new EventEmitter();
 reviewOutcomes.setMaxListeners(0);
 
 const reviewTargets = new Map<string, ReviewTarget>();
+
+/** The review going on for an id, so it can be cancelled: before its agent starts, or while it runs. */
+interface ActiveReview {
+  cancelled: boolean;
+  runId?: string;
+  child?: ChildProcess;
+}
+
+const activeReviews = new Map<string, ActiveReview>();
+
+function beginActive(id: string): ActiveReview {
+  const active: ActiveReview = { cancelled: false };
+  activeReviews.set(id, active);
+  return active;
+}
+
+function endActive(id: string, active: ActiveReview): void {
+  if (activeReviews.get(id) === active) activeReviews.delete(id);
+}
 
 const CLAUDE_CANDIDATES = ["claude", `${os.homedir()}/.local/bin/claude`, "/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
 
@@ -107,40 +128,38 @@ const FINDINGS_SCHEMA_TEXT = `{
   ]
 }`;
 
-interface ExistingReviewContext {
-  reviews: ExistingReview[];
-  comments: ExistingReviewComment[];
-}
-
-function formatExistingReviews(ctx: ExistingReviewContext): string {
-  const reviewBlocks = ctx.reviews
-    .filter((r) => r.body.trim() !== "")
-    .map((r) => `### Review de ${r.author} (${r.state})\n${r.body}`);
-
-  const commentBlocks = ctx.comments.map((c) => {
-    const where = c.path ? `${c.path}${c.line !== null ? `:${c.line}` : ""}` : "(général)";
-    return `### ${c.author} sur \`${where}\`\n${c.body}`;
-  });
-
-  if (reviewBlocks.length === 0 && commentBlocks.length === 0) return "";
-
-  return `
-## Reviews existantes sur cette PR
-Ces reviews ont déjà été postées (par Greptile ou d'autres reviewers). Ton rôle est de les CHALLENGER, pas de les répéter :
-- Pour chaque point soulevé, vérifie-le dans le code : est-il fondé, exagéré, ou faux ?
-- Signale les faux positifs et les points mal cadrés dans le \`summary\` global.
-- Ne redonne PAS un finding pour un point déjà correctement soulevé — mentionne-le plutôt dans le summary comme « déjà couvert ».
-- Cherche ce qu'elles ont MANQUÉ : c'est là que tu apportes de la valeur.
-- Si un point existant mérite un contre-argument, produis un finding dont le \`suggestedComment\` répond explicitement à ce point.
-
-${[...reviewBlocks, ...commentBlocks].join("\n\n")}
-`;
-}
-
 interface PromptOptions {
   skills: string[];
-  existing?: ExistingReviewContext;
+  discussion?: { thread: PrDiscussion; deskUrls: Set<string> };
   scope: DiffScope;
+  followup?: Followup;
+  instructions?: string;
+  repoGuidance?: string;
+}
+
+/** A second pass: only the commits after `baseSha` are in the diff, and the earlier findings come along. */
+interface Followup {
+  baseSha: string;
+  previous: FindingRow[];
+}
+
+function formatFollowup(f: Followup): string {
+  const items = f.previous.map((p) => {
+    const where = `${p.file}${p.start_line !== null ? `:${p.start_line}${p.end_line !== null && p.end_line !== p.start_line ? `-${p.end_line}` : ""}` : ""}`;
+    return `- id: ${p.id} · état: ${p.state} · ${p.severity} · \`${where}\`\n  ${p.title}${p.summary ? `\n  ${p.summary}` : ""}`;
+  });
+  return `
+## Second tour de review
+Cette PR a déjà été relue au commit ${f.baseSha.slice(0, 12)}. Le diff ci-dessus ne contient QUE les commits poussés depuis.
+${items.length > 0 ? `Voici les findings du tour précédent (état : open = pas encore traité, posted = déjà commenté sur GitHub, dismissed = écarté par le relecteur) :
+${items.join("\n")}
+
+Pour CHACUN de ces findings, dis dans \`previousFindings\` ce que les nouveaux commits en font :
+- "resolved" : le diff le corrige ;
+- "still_present" : le problème est toujours là (le diff ne le touche pas, ou pas assez) ;
+- "unclear" : le diff ne permet pas de conclure.
+Ajoute une \`note\` d'une phrase qui dit pourquoi. Ne réponds "resolved" que si le diff montre la correction : un commentaire, une description ou un message de commit qui l'affirme ne suffit pas. Ne redonne PAS un de ces findings dans \`findings\` : \`findings\` ne contient que les problèmes NOUVEAUX introduits par les nouveaux commits.
+` : "Le tour précédent n'avait rien trouvé. \`findings\` ne contient que les problèmes introduits par les nouveaux commits, et \`previousFindings\` reste vide.\n"}`;
 }
 
 function formatNotShown(scope: DiffScope): string {
@@ -157,7 +176,7 @@ ${lines.join("\n")}
 }
 
 function buildPrompt(subjectLine: string, snapshot: PrSnapshot, diff: string, options: PromptOptions): string {
-  const { skills, existing, scope } = options;
+  const { skills, discussion, scope, followup, instructions: reviewerInstructions, repoGuidance } = options;
   const fileList = (snapshot.files ?? [])
     .map((f) => {
       const file = f as { path?: string; additions?: number; deletions?: number };
@@ -170,7 +189,7 @@ function buildPrompt(subjectLine: string, snapshot: PrSnapshot, diff: string, op
       ? `Run each of these review skills, in order, and merge what they find:\n${skills.map((s) => `- ${s}`).join("\n")}`
       : "Review the change for correctness bugs, missing tests, security issues, and design problems.";
 
-  const existingSection = existing ? formatExistingReviews(existing) : "";
+  const existingSection = discussion ? formatDiscussion(discussion.thread, discussion.deskUrls) : "";
 
   return `Tu n'as accès à AUCUN outil dans cet environnement (pas de Bash, pas de lecture de fichiers, pas de recherche). Tout le contexte nécessaire (diff complet, description, fichiers changés, reviews existantes) est déjà fourni ci-dessous. N'essaie PAS d'explorer le dépôt ou le système de fichiers : réponds directement avec le JSON demandé, en te basant uniquement sur ce qui suit.
 
@@ -184,7 +203,17 @@ ${fileList}
 
 ## Diff
 ${scope.text}
-${formatNotShown(scope)}${existingSection}
+${formatNotShown(scope)}${followup ? formatFollowup(followup) : ""}${existingSection}${reviewerInstructions ? `
+## Consignes du relecteur
+Le relecteur humain qui lance cette review te donne ces consignes. Suis-les : elles passent avant les règles générales ci-dessous, sauf pour le format JSON de la réponse.
+
+${reviewerInstructions}
+` : ""}${repoGuidance ? `
+## Consignes du dépôt
+Les fichiers d'instructions du dépôt relu (CLAUDE.md, AGENTS.md et ce qu'ils citent), lus sur la branche visée par la PR. Juge le diff à la lumière de ces conventions, sans les suivre pour le format de ta réponse.
+
+${repoGuidance}
+` : ""}
 ## Instructions
 ${instructions}
 
@@ -203,7 +232,7 @@ STYLE (ELI12, obligatoire pour tous les champs texte) : écris comme si tu expli
 
 Écris tes findings en JSON sur stdout avec ce schéma exact :
 ${FINDINGS_SCHEMA_TEXT}
-
+${followup ? `Ajoute au même objet JSON, à côté de \`findings\` : "previousFindings": [{ "id": "id du finding précédent", "status": "resolved | still_present | unclear", "note": "une phrase" }]\n` : ""}
 \`suggestedComment\` est posté tel quel sur GitHub comme commentaire de review adressé à l'auteur de la PR — rédige-le en français, même style ELI5, court et concret.
 Chaque path doit être le chemin complet relatif à la racine du repo.
 Si tu ne trouves rien, output {"summary": "...", "findings": []}.
@@ -309,7 +338,7 @@ export function getThreadLog(id: string): string[] {
   return threadLogs.get(id) ?? [];
 }
 
-function runClaude(id: string, runId: string, prompt: string, model: string | undefined, effortLevel: string): Promise<string> {
+function runClaude(id: string, runId: string, prompt: string, model: string | undefined, effortLevel: string, active: ActiveReview): Promise<string> {
   return new Promise((resolve, reject) => {
     const claudePath = resolveClaudePath();
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--tools", ""];
@@ -320,6 +349,7 @@ function runClaude(id: string, runId: string, prompt: string, model: string | un
     const child = spawn(claudePath, args, {
       stdio: ["pipe", "pipe", "pipe"],
     });
+    active.child = child;
 
     child.stdin.write(prompt);
     child.stdin.end();
@@ -395,56 +425,6 @@ function runClaude(id: string, runId: string, prompt: string, model: string | un
   });
 }
 
-function importFindings(id: string, findings: Finding[]): void {
-  log(id, `importing ${findings.length} findings`);
-  const db = getDb();
-  db.prepare("DELETE FROM findings WHERE review_id = ?").run(id);
-
-  const insert = db.prepare(
-    `INSERT INTO findings (
-      id, review_id, ord, file, start_line, end_line, side, severity, category, title,
-      summary, background, problem, suggested_fix, suggested_comment, draft_comment,
-      state, comment_url, posted_at, posted_as, references_json
-    ) VALUES (
-      @id, @review_id, @ord, @file, @start_line, @end_line, @side, @severity, @category, @title,
-      @summary, @background, @problem, @suggested_fix, @suggested_comment, @draft_comment,
-      @state, @comment_url, @posted_at, @posted_as, @references_json
-    )`
-  );
-
-  const insertMany = db.transaction((rows: Finding[]) => {
-    rows.forEach((finding, index) => {
-      log(id, `  finding ${index}: [${finding.severity}] ${finding.file}:${finding.startLine} — ${finding.title}`);
-      insert.run({
-        id: randomUUID(),
-        review_id: id,
-        ord: index,
-        file: finding.file,
-        start_line: finding.startLine,
-        end_line: finding.endLine,
-        side: finding.side,
-        severity: finding.severity,
-        category: finding.category,
-        title: finding.title,
-        summary: finding.summary,
-        background: finding.background,
-        problem: finding.problem,
-        suggested_fix: finding.suggestedFix,
-        suggested_comment: finding.suggestedComment,
-        draft_comment: finding.suggestedComment,
-        state: "open",
-        comment_url: null,
-        posted_at: null,
-        posted_as: "comment",
-        references_json: JSON.stringify(finding.references),
-      });
-    });
-  });
-
-  insertMany(findings);
-  log(id, `imported ${findings.length} findings successfully`);
-}
-
 function failReview(id: string, message: string): void {
   log(id, `REVIEW FAILED: ${message}`);
   const db = getDb();
@@ -455,6 +435,24 @@ function failReview(id: string, message: string): void {
   );
   emit(id, "status", { status: "failed", error: message });
   announce(id, { status: "failed", error: message });
+}
+
+/**
+ * Stops the review going on for this id: its agent process is killed, or never started if it was
+ * still being prepared. The review and its run read cancelled; no outcome is announced, so nothing
+ * is notified. False when no review of this id is going on.
+ */
+export function cancelReview(id: string): boolean {
+  const active = activeReviews.get(id);
+  if (!active || active.cancelled) return false;
+  active.cancelled = true;
+  log(id, `REVIEW CANCELLED${active.child ? `, killing pid ${active.child.pid}` : " before its agent started"}`);
+  active.child?.kill("SIGTERM");
+  if (active.runId) finishRun(active.runId, "cancelled");
+  getDb().prepare("UPDATE reviews SET status = 'cancelled', error = NULL, updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+  track("review", "cancelled", { reviewId: id, runId: active.runId, payload: { agentStarted: !!active.child } });
+  emit(id, "status", { status: "cancelled" });
+  return true;
 }
 
 // With no tools the agent always answers in one turn, so effort sets how hard it thinks (claude --effort).
@@ -470,29 +468,108 @@ interface RunOptions {
   model?: string;
   effort?: string;
   challengeExisting: boolean;
+  instructions?: string;
+  active: ActiveReview;
 }
 
-async function runReview(id: string, repo: string, number: number, subjectLine: string, snapshot: PrSnapshot, diff: string, opts: RunOptions): Promise<void> {
-  const { skills, model, effort, challengeExisting } = opts;
+const MAX_INSTRUCTIONS_CHARS = 4000;
 
-  let existing: ExistingReviewContext | undefined;
-  if (challengeExisting) {
-    log(id, "fetching existing reviews and comments for challenge...");
+/** The reviewer's free text for the agent: trimmed, capped, and absent when blank. */
+export function cleanInstructions(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const text = raw.trim().slice(0, MAX_INSTRUCTIONS_CHARS);
+  return text || undefined;
+}
+
+/**
+ * The commit the last reported run read, when this PR has moved on from it by new commits only.
+ * Local and compare reviews, a first run, the same commit again, or a rewritten history give null:
+ * those runs read the whole change.
+ */
+async function followupBase(id: string, repo: string, headSha: string): Promise<string | null> {
+  if (!headSha || repo.startsWith("local/") || repo.startsWith("compare/")) return null;
+  const last = getDb()
+    .prepare("SELECT head_sha FROM review_runs WHERE review_id = ? AND status = 'reported' AND head_sha IS NOT NULL ORDER BY started_at DESC LIMIT 1")
+    .get(id) as { head_sha: string } | undefined;
+  if (!last || last.head_sha === headSha) return null;
+  try {
+    const compare = await fetchCompare(repo, last.head_sha, headSha);
+    if (compare.behindBy > 0 || compare.truncated || compare.aheadBy === 0) {
+      log(id, `follow-up not possible from ${last.head_sha.slice(0, 9)}: behind ${compare.behindBy}, ahead ${compare.aheadBy}, truncated ${compare.truncated}`);
+      return null;
+    }
+    return last.head_sha;
+  } catch (err) {
+    log(id, `follow-up not possible from ${last.head_sha.slice(0, 9)}: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+async function runReview(id: string, repo: string, number: number, subjectLine: string, snapshot: PrSnapshot, fullDiff: string, opts: RunOptions): Promise<void> {
+  const { skills, model, effort, challengeExisting, instructions, active } = opts;
+  const headSha = snapshot.headRefOid ?? "";
+
+  let diff = fullDiff;
+  let followup: Followup | undefined;
+  const baseSha = await followupBase(id, repo, headSha);
+  if (baseSha) {
     try {
-      existing = await fetchExistingReviews(repo, number);
-      log(id, `existing: ${existing.reviews.length} reviews, ${existing.comments.length} inline comments (authors: ${[...new Set([...existing.reviews, ...existing.comments].map((x) => x.author))].join(", ") || "none"})`);
+      const newDiff = await fetchCompareDiff(repo, baseSha, headSha);
+      if (newDiff.trim()) {
+        diff = newDiff;
+        const previous = getDb()
+          .prepare("SELECT * FROM findings WHERE review_id = ? AND state != 'resolved' ORDER BY ord ASC")
+          .all(id) as FindingRow[];
+        followup = { baseSha, previous };
+        log(id, `follow-up run: diff ${baseSha.slice(0, 9)}..${headSha.slice(0, 9)} (${diff.length} chars), ${previous.length} earlier findings`);
+      }
     } catch (err) {
-      log(id, `WARNING: could not fetch existing reviews: ${(err as Error).message}`);
+      log(id, `follow-up diff failed, reading the whole change: ${(err as Error).message}`);
+    }
+  }
+  const mode: RunMode = followup ? "followup" : "full";
+
+  let discussion: PromptOptions["discussion"];
+  if (challengeExisting) {
+    log(id, "fetching the PR discussion (reviews, conversation, threads)...");
+    try {
+      const thread = await fetchPrDiscussion(repo, number);
+      const deskUrls = new Set(
+        (getDb().prepare("SELECT comment_url FROM findings WHERE review_id = ? AND comment_url IS NOT NULL").all(id) as { comment_url: string }[]).map((r) => r.comment_url)
+      );
+      discussion = { thread, deskUrls };
+      log(id, `discussion: ${thread.reviews.length} reviews, ${thread.conversation.length} conversation comments, ${thread.threads.length} threads, ${deskUrls.size} posted by the Desk`);
+    } catch (err) {
+      log(id, `WARNING: could not fetch the PR discussion: ${(err as Error).message}`);
+    }
+  }
+
+  let repoGuidance: string | undefined;
+  if (!repo.startsWith("local/") && !repo.startsWith("compare/") && snapshot.baseRefName) {
+    try {
+      const changed = (snapshot.files ?? []).map((f) => String((f as { path?: string }).path ?? "")).filter(Boolean);
+      const files = await collectRepoGuidance(changed, (path) => fetchRepoFile(repo, path, snapshot.baseRefName));
+      const guidance = assembleGuidance(files);
+      if (files.length > 0) repoGuidance = guidance.text;
+      log(id, `repository guidance: ${files.map((f) => f.path).join(", ") || "none"} (${guidance.totalChars} chars)`);
+      if (guidance.cut) log(id, `WARNING: repository guidance cut to ${MAX_GUIDANCE_CHARS} of ${guidance.totalChars} chars`);
+    } catch (err) {
+      log(id, `WARNING: could not read the repository guidance: ${(err as Error).message}`);
     }
   }
 
   const scope = scopeDiff(diff);
   log(id, `building prompt (diff: ${diff.length} chars, sent ${scope.sentFiles} files, omitted ${scope.omitted.length}, truncated ${scope.truncated.length}, challenge=${challengeExisting})`);
-  const prompt = buildPrompt(subjectLine, snapshot, diff, { skills, existing, scope });
+  const prompt = buildPrompt(subjectLine, snapshot, diff, { skills, discussion, scope, followup, instructions, repoGuidance });
   log(id, `prompt built: ${prompt.length} chars`);
+  if (active.cancelled) return;
 
   const effortLevel = EFFORT_LEVEL[effort ?? "standard"] ?? "medium";
   const runId = createRun(id, prompt, { model, effort, effortLevel, skills, scope });
+  active.runId = runId;
+  getDb()
+    .prepare("UPDATE review_runs SET head_sha = ?, base_sha = ?, mode = ?, instructions = ? WHERE id = ?")
+    .run(headSha || null, followup?.baseSha ?? null, mode, instructions ?? null, runId);
   track("review", "run.started", {
     reviewId: id,
     runId,
@@ -508,15 +585,20 @@ async function runReview(id: string, repo: string, number: number, subjectLine: 
       omitted: scope.omitted,
       truncated: scope.truncated,
       challengeExisting,
-      existingReviews: existing ? existing.reviews.length + existing.comments.length : 0,
+      mode,
+      instructionsChars: instructions?.length ?? 0,
+      followupFrom: followup?.baseSha ?? null,
+      existingReviews: discussion ? discussion.thread.reviews.length + discussion.thread.conversation.length + discussion.thread.threads.length : 0,
     },
   });
   const startedAt = Date.now();
   try {
-    await runAgent(id, runId, prompt, model, effortLevel);
+    await runAgent(id, runId, prompt, model, effortLevel, mode, active);
+    if (active.cancelled) return;
     finishRun(runId, "reported");
     track("review", "run.reported", { reviewId: id, runId, repo, status: "ok", durationMs: Date.now() - startedAt, payload: runNumbers(runId) });
   } catch (err) {
+    if (active.cancelled) return;
     const message = err instanceof Error ? err.message : String(err);
     finishRun(runId, "failed", message);
     track("review", "run.failed", { reviewId: id, runId, repo, status: "error", durationMs: Date.now() - startedAt, payload: { error: message.slice(0, 2000), ...runNumbers(runId) } });
@@ -524,16 +606,17 @@ async function runReview(id: string, repo: string, number: number, subjectLine: 
   }
 }
 
-async function runAgent(id: string, runId: string, prompt: string, model: string | undefined, effortLevel: string): Promise<void> {
+async function runAgent(id: string, runId: string, prompt: string, model: string | undefined, effortLevel: string, mode: RunMode, active: ActiveReview): Promise<void> {
   log(id, `starting claude subprocess (run ${runId})...${model ? ` model=${model}` : " (default model)"} effort=${effortLevel}`);
   threadLogs.delete(id);
-  const assistantText = await runClaude(id, runId, prompt, model, effortLevel);
+  const assistantText = await runClaude(id, runId, prompt, model, effortLevel, active);
   log(id, `claude finished, output: ${assistantText.length} chars`);
-  importReport(id, assistantText);
+  if (active.cancelled) return;
+  importReport(id, runId, mode, assistantText);
 }
 
 /** Turns the agent's final text into findings and marks the review reported. Throws when there is no usable report. */
-function importReport(id: string, assistantText: string): void {
+function importReport(id: string, runId: string, mode: RunMode, assistantText: string): void {
   log(id, "extracting JSON block from output...");
   const jsonBlock = extractJsonBlock(assistantText);
   if (!jsonBlock) {
@@ -563,7 +646,8 @@ function importReport(id: string, assistantText: string): void {
     log(id, `  warning: finding ${w.index}: ${w.reason}`);
   }
 
-  importFindings(id, result.report.findings);
+  log(id, `saving ${result.report.findings.length} findings (${mode} run), ${result.report.previousFindings.length} verdicts on earlier ones`);
+  saveRunFindings(getDb(), { reviewId: id, runId, mode, findings: result.report.findings, verdicts: result.report.previousFindings });
   emit(id, "findings", {
     summary: result.report.summary,
     count: result.report.findings.length,
@@ -587,7 +671,8 @@ export async function startReview(
   skills: string[] = [],
   model?: string,
   effort?: string,
-  challengeExisting = true
+  challengeExisting = true,
+  instructions?: string
 ): Promise<string> {
   const db = getDb();
   const id = reviewId(repo, number);
@@ -625,9 +710,12 @@ export async function startReview(
 
   log(id, `launching review in background...${model ? ` model=${model}` : ""} effort=${effort ?? "standard"} challenge=${challengeExisting}`);
   const subjectLine = `Review GitHub pull request ${repo}#${number} — ${snapshot.title}`;
-  runReview(id, repo, number, subjectLine, snapshot, diff, { skills, model, effort, challengeExisting }).catch((err) => {
-    failReview(id, err instanceof Error ? err.message : String(err));
-  });
+  const active = beginActive(id);
+  runReview(id, repo, number, subjectLine, snapshot, diff, { skills, model, effort, challengeExisting, instructions, active })
+    .catch((err) => {
+      if (!active.cancelled) failReview(id, err instanceof Error ? err.message : String(err));
+    })
+    .finally(() => endActive(id, active));
 
   return id;
 }
@@ -639,7 +727,8 @@ export async function startLocalReview(
   base: string,
   skills: string[] = [],
   model?: string,
-  effort?: string
+  effort?: string,
+  instructions?: string
 ): Promise<{ repo: string; number: number }> {
   const db = getDb();
   const { repo, number } = localRepoIdentity(repoLabel, branch);
@@ -703,9 +792,12 @@ export async function startLocalReview(
     .filter(Boolean)
     .join(" and ");
   const subjectLine = `Review the local branch \`${branch}\` (${scope}, diff vs \`${baseRef}\`) in repo ${repoLabel} — ${snapshot.title}`;
-  runReview(id, repo, number, subjectLine, snapshot, diff, { skills, model, effort, challengeExisting: false }).catch((err) => {
-    failReview(id, err instanceof Error ? err.message : String(err));
-  });
+  const active = beginActive(id);
+  runReview(id, repo, number, subjectLine, snapshot, diff, { skills, model, effort, challengeExisting: false, instructions, active })
+    .catch((err) => {
+      if (!active.cancelled) failReview(id, err instanceof Error ? err.message : String(err));
+    })
+    .finally(() => endActive(id, active));
 
   return { repo, number };
 }
@@ -733,7 +825,8 @@ export async function startCompareReview(
   head: string,
   skills: string[] = [],
   model?: string,
-  effort?: string
+  effort?: string,
+  instructions?: string
 ): Promise<{ repo: string; number: number }> {
   const db = getDb();
   const identity = compareIdentity(repo, head);
@@ -789,9 +882,12 @@ export async function startCompareReview(
   emit(id, "status", { status: "running" });
 
   const subjectLine = `Review the ${compare.aheadBy} commit${compare.aheadBy > 1 ? "s" : ""} on \`${head}\` of ${repo} that are not in \`${base}\` yet — ${snapshot.title}`;
-  runReview(id, identity.repo, identity.number, subjectLine, snapshot, diff, { skills, model, effort, challengeExisting: false }).catch((err) => {
-    failReview(id, err instanceof Error ? err.message : String(err));
-  });
+  const active = beginActive(id);
+  runReview(id, identity.repo, identity.number, subjectLine, snapshot, diff, { skills, model, effort, challengeExisting: false, instructions, active })
+    .catch((err) => {
+      if (!active.cancelled) failReview(id, err instanceof Error ? err.message : String(err));
+    })
+    .finally(() => endActive(id, active));
 
   return identity;
 }
@@ -819,7 +915,8 @@ export function reimportRun(runId: string): { reviewId: string; findings: number
           .join("");
   if (!text.trim()) throw new Error("this run has no saved answer to read");
 
-  importReport(id, text);
+  const { mode } = getDb().prepare("SELECT mode FROM review_runs WHERE id = ?").get(runId) as { mode: RunMode };
+  importReport(id, runId, mode, text);
   getDb().prepare("UPDATE reviews SET error = NULL WHERE id = ?").run(id);
   finishRun(runId, "reported");
   const count = (getDb().prepare("SELECT COUNT(*) AS n FROM findings WHERE review_id = ?").get(id) as { n: number }).n;
