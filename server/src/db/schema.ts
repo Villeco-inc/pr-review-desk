@@ -1,8 +1,9 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { dataDir } from "../services/data-dir";
 
-const DB_PATH = path.join(process.cwd(), "data", "reviews.db");
+const DB_PATH = path.join(dataDir(), "reviews.db");
 
 let instance: Database.Database | null = null;
 

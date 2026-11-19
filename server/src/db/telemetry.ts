@@ -1,11 +1,12 @@
-// Telemetry lives in its own SQLite file, data/telemetry.db, so the reviews database stays small and
-// telemetry can be emptied or deleted on its own. Nothing is purged automatically.
+// Telemetry lives in its own SQLite file, telemetry.db in the data folder, so the reviews database
+// stays small and telemetry can be emptied or deleted on its own. Nothing is purged automatically.
 
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { dataDir } from "../services/data-dir";
 
-const DB_PATH = path.join(process.cwd(), "data", "telemetry.db");
+const DB_PATH = path.join(dataDir(), "telemetry.db");
 const MAX_PAYLOAD_CHARS = 20_000;
 
 let instance: Database.Database | null = null;

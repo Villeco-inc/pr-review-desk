@@ -1,6 +1,7 @@
 node_modules
 dist
 data
+data-dev
 .git
 *.db
 .env

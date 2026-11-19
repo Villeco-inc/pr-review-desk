@@ -18,6 +18,8 @@ describe("which requests telemetry records", () => {
     expect(isTrackedRequest("GET", "/api/repos")).toBe(false);
   });
 
+  it("does not record the tray's health polls", () => expect(isTrackedRequest("GET", "/api/health")).toBe(false));
+
   it("still records what changes the selection, and the reads that are not polls", () => {
     expect(isTrackedRequest("PUT", "/api/repos")).toBe(true);
     expect(isTrackedRequest("GET", "/api/repos/available")).toBe(true);

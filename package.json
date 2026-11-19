@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "tsx watch --env-file-if-exists=.env server/src/index.ts",
+    "dev:server": "DATA_DIR=data-dev tsx watch --env-file-if-exists=.env server/src/index.ts",
     "dev:client": "vite",
     "build": "vite build && tsc -p server/tsconfig.json",
     "start": "node server/dist/server/src/index.js",

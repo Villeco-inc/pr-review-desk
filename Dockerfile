@@ -25,6 +25,9 @@ COPY --from=build /app/shared ./shared
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+ARG DESK_COMMIT=inconnue
+ENV DESK_COMMIT=$DESK_COMMIT
+
 EXPOSE 3100
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "server/dist/server/src/index.js"]

@@ -8,7 +8,10 @@ import { JUMP_KEY_LABEL, isMac } from "./CommandPalette";
 import { Segmented } from "./ui/Field";
 import { SETTINGS_SHOW_SYSTEM_SWITCH, useSystem, type System, type Theme } from "./SystemProvider";
 import { useNotificationPermission, useUnreadCount } from "../hooks/useNotifications";
+import type { DeskHealth } from "../../../shared/types";
 import { AutoReviewSwitch } from "./AutoReviewToggles";
+import DevBanner, { DevPill } from "./DevBanner";
+import { useDeskHealth } from "../hooks/useDeskHealth";
 
 export type Section = "new" | "prs" | "local" | "compare" | "activity" | "repos" | "settings";
 export type BuiltSection = "new" | "prs" | "local" | "compare" | "activity";
@@ -97,12 +100,14 @@ export default function AppShell({ section, crumbs, actions, children, onNavigat
     []
   );
   const ctx = useMemo(() => ({ actionsEl, setCount }), [actionsEl, setCount]);
+  const health = useDeskHealth();
 
   return (
     <ShellContext.Provider value={ctx}>
       <div className="flex h-screen overflow-hidden bg-page text-fg">
-        <Rail section={section} counts={counts} onNavigate={onNavigate} onJump={onJump} onPickRepos={onPickRepos} onOpenNotifications={onOpenNotifications} />
+        <Rail health={health} section={section} counts={counts} onNavigate={onNavigate} onJump={onJump} onPickRepos={onPickRepos} onOpenNotifications={onOpenNotifications} />
         <div className="flex min-w-0 flex-1 flex-col">
+          <DevBanner health={health} />
           <div className="flex h-[54px] shrink-0 items-center gap-4 edge-b bg-page px-6">
             {crumbs}
             <div ref={setActionsEl} className="ml-auto flex shrink-0 items-center gap-2">
@@ -118,6 +123,7 @@ export default function AppShell({ section, crumbs, actions, children, onNavigat
 }
 
 function Rail({
+  health,
   section,
   counts,
   onNavigate,
@@ -125,6 +131,7 @@ function Rail({
   onPickRepos,
   onOpenNotifications,
 }: {
+  health: DeskHealth | null;
   section: Section;
   counts: Partial<Record<Section, number>>;
   onNavigate: (section: BuiltSection) => void;
@@ -146,6 +153,7 @@ function Rail({
           <br />
           Desk
         </span>
+        <DevPill health={health} />
       </div>
 
       <button

@@ -2,6 +2,7 @@ node_modules/
 dist/
 server/dist/
 data/
+data-dev/
 .env
 *.db
 *.db-shm
