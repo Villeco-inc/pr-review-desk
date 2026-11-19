@@ -3,6 +3,7 @@ dist/
 server/dist/
 data/
 data-dev/
+.desk/
 .env
 *.db
 *.db-shm
