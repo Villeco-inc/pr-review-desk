@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { migrate, migrateFindingQuality } from "../db/schema";
-import { markApproved, pasteVerdict, recentPrReviews } from "../services/recent-reviews";
+import { lastReviewedHead, markApproved, pasteVerdict, recentPrReviews } from "../services/recent-reviews";
 
 function openDb(): Database.Database {
   const db = new Database(":memory:");
@@ -58,6 +58,26 @@ describe("pasting a pull request on the home screen", () => {
 
   it("starts a run on a pull request never reviewed", () => {
     expect(pasteVerdict(openDb(), PR, "aaa111")).toBe("start");
+  });
+});
+
+describe("the commit a pull request was last reviewed at", () => {
+  it("is the head of the latest reported run that recorded one, skipping failed and cancelled runs", () => {
+    const db = openDb();
+    review(db, "acme/api", 655, "failed", "2026-11-01T10:00:00.000Z");
+    run(db, PR, "reported", "aaa111", "2026-11-01T07:00:00.000Z");
+    run(db, PR, "reported", "bbb222", "2026-11-01T08:00:00.000Z");
+    run(db, PR, "reported", null, "2026-11-01T08:30:00.000Z");
+    run(db, PR, "failed", "ccc333", "2026-11-01T09:00:00.000Z");
+    run(db, PR, "cancelled", "ddd444", "2026-11-01T09:30:00.000Z");
+    expect(lastReviewedHead(db, PR)).toBe("bbb222");
+  });
+
+  it("is null for a pull request with no reported run", () => {
+    const db = openDb();
+    review(db, "acme/api", 655, "running", "2026-11-01T10:00:00.000Z");
+    run(db, PR, "running", "aaa111", "2026-11-01T09:00:00.000Z");
+    expect(lastReviewedHead(db, PR)).toBeNull();
   });
 });
 
