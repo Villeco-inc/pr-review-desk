@@ -1,6 +1,9 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        DESK_COMMIT: "${DESK_COMMIT:-inconnue}"      # set by ./start.sh; shown by /api/health
     ports:
       - "127.0.0.1:${HOST_PORT:-37703}:3100"          # this machine only: the app posts to GitHub as you
     volumes:

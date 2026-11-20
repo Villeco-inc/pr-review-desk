@@ -11,6 +11,7 @@ import { viewMemoryRouter } from "./routes/view-memory";
 import { compareRouter } from "./routes/compare";
 import { telemetryRouter } from "./routes/telemetry";
 import { notificationsRouter } from "./routes/notifications";
+import { healthRouter } from "./routes/health";
 import { track } from "./db/telemetry";
 import { localOnly } from "./services/local-only";
 import { isTrackedRequest } from "./services/tracked-requests";
@@ -66,6 +67,7 @@ app.use("/api", viewMemoryRouter);
 app.use("/api", compareRouter);
 app.use("/api", telemetryRouter);
 app.use("/api", notificationsRouter);
+app.use("/api", healthRouter);
 
 startReviewOutcomeNotifications();
 githubEvents.on("event", (event: WatchEvent) => {

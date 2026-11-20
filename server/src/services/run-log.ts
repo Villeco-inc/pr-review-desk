@@ -1,15 +1,16 @@
 // Every execution of the review agent is kept: a row in review_runs for the numbers, and a
-// directory under data/runs/<runId>/ for what was said — the prompt, the raw stream-json
+// directory under <data folder>/runs/<runId>/ for what was said — the prompt, the raw stream-json
 // events exactly as `claude -p` printed them, and stderr. Nothing is truncated.
 
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getDb } from "../db/schema";
+import { dataDir } from "./data-dir";
 import type { ReviewRunDto, ReviewRunRow, RunSessionDto } from "../../../shared/types";
 import type { DiffScope } from "./diff-scope";
 
-const RUNS_DIR = path.join(process.cwd(), "data", "runs");
+const RUNS_DIR = path.join(dataDir(), "runs");
 const PROMPT = "prompt.txt";
 const STREAM = "stream.jsonl";
 const STDERR = "stderr.log";
