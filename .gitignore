@@ -19,3 +19,7 @@ shared/*.js
 .e2e/videos/
 .e2e/proofs/
 .e2e/cost-history.jsonl
+
+# Swift (tray macOS)
+tray/.build/
+tray/.swiftpm/

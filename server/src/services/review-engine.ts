@@ -22,6 +22,7 @@ import { appendStderr, appendStreamLine, createRun, finishRun, getRunSession, re
 import type { FindingRow, ReviewEvent, ReviewOutcome, ReviewTarget } from "../../../shared/types";
 import { saveRunFindings, type RunMode } from "./finding-store";
 import { formatDiscussion, type PrDiscussion } from "./discussion";
+import { lastReviewedHead } from "./recent-reviews";
 
 export const reviewEvents = new EventEmitter();
 reviewEvents.setMaxListeners(0);
@@ -488,19 +489,17 @@ export function cleanInstructions(raw: unknown): string | undefined {
  */
 async function followupBase(id: string, repo: string, headSha: string): Promise<string | null> {
   if (!headSha || repo.startsWith("local/") || repo.startsWith("compare/")) return null;
-  const last = getDb()
-    .prepare("SELECT head_sha FROM review_runs WHERE review_id = ? AND status = 'reported' AND head_sha IS NOT NULL ORDER BY started_at DESC LIMIT 1")
-    .get(id) as { head_sha: string } | undefined;
-  if (!last || last.head_sha === headSha) return null;
+  const lastHead = lastReviewedHead(getDb(), id);
+  if (!lastHead || lastHead === headSha) return null;
   try {
-    const compare = await fetchCompare(repo, last.head_sha, headSha);
+    const compare = await fetchCompare(repo, lastHead, headSha);
     if (compare.behindBy > 0 || compare.truncated || compare.aheadBy === 0) {
-      log(id, `follow-up not possible from ${last.head_sha.slice(0, 9)}: behind ${compare.behindBy}, ahead ${compare.aheadBy}, truncated ${compare.truncated}`);
+      log(id, `follow-up not possible from ${lastHead.slice(0, 9)}: behind ${compare.behindBy}, ahead ${compare.aheadBy}, truncated ${compare.truncated}`);
       return null;
     }
-    return last.head_sha;
+    return lastHead;
   } catch (err) {
-    log(id, `follow-up not possible from ${last.head_sha.slice(0, 9)}: ${(err as Error).message}`);
+    log(id, `follow-up not possible from ${lastHead.slice(0, 9)}: ${(err as Error).message}`);
     return null;
   }
 }

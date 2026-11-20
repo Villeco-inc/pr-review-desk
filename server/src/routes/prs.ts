@@ -3,6 +3,7 @@ import { getDb } from "../db/schema";
 import { fetchPullRequests, listAccessibleRepos, fetchPrSnapshot, getViewer } from "../services/github";
 import { createPrRefresher } from "../services/pr-refresh";
 import { isRepoName, saveSelectedRepos, scopeOf, selectedRepos } from "../services/repo-selection";
+import { lastReviewedHead } from "../services/recent-reviews";
 import { findReview } from "../services/review-lookup";
 import { discoveredRepos } from "../services/repo-discovery";
 import { checkoutsRoot } from "../services/local-git";
@@ -167,7 +168,9 @@ prsRouter.get("/prs/:owner/:name/:number", async (req, res) => {
       ? (db.prepare("SELECT * FROM findings WHERE review_id = ? ORDER BY ord ASC").all(review.id) as FindingRow[])
       : [];
 
-    res.json({ snapshot, review: review ?? null, findings });
+    // The tray compares it with snapshot.headRefOid to offer opening an up-to-date review rather than starting one.
+    const reviewedHeadSha = review ? lastReviewedHead(db, review.id) : null;
+    res.json({ snapshot, review: review ?? null, findings, reviewedHeadSha });
   } catch (err) {
     res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }

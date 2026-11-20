@@ -13,10 +13,15 @@ export type PasteVerdict = "start" | "running" | "unchanged";
  */
 export function pasteVerdict(db: Database.Database, id: string, headSha: string): PasteVerdict {
   if (db.prepare("SELECT 1 FROM reviews WHERE id = ? AND status IN ('queued', 'running')").get(id)) return "running";
+  return lastReviewedHead(db, id) === headSha ? "unchanged" : "start";
+}
+
+/** The commit the latest reported run read, or null when no reported run recorded one. */
+export function lastReviewedHead(db: Database.Database, id: string): string | null {
   const last = db
     .prepare("SELECT head_sha FROM review_runs WHERE review_id = ? AND status = 'reported' AND head_sha IS NOT NULL ORDER BY started_at DESC LIMIT 1")
     .get(id) as { head_sha: string } | undefined;
-  return last?.head_sha === headSha ? "unchanged" : "start";
+  return last?.head_sha ?? null;
 }
 
 export function markApproved(db: Database.Database, id: string, now = new Date()): void {
