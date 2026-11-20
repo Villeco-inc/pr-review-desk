@@ -2,6 +2,7 @@ node_modules
 dist
 data
 data-dev
+.desk
 .git
 *.db
 .env
